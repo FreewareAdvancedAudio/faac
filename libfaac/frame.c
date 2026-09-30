@@ -159,7 +159,7 @@ int faacEncGetDecoderSpecificInfo(faacEncHandle hpEncoder, unsigned char *buf)
     PutBit(&bs, GetChannelConfig((int)hEncoder->numChannels), 4);
     PutBit(&bs, 0, 3); /* frameLengthFlag, dependsOnCoreCoder, extensionFlag */
     if (he) {
-        /* Explicit-hierarchy extension: AAC-LC at Fs/2, SBR at full Fs. */
+        /* Backward-compatible sync extension: AAC-LC at Fs/2, SBR at full Fs. */
         PutBit(&bs, 0x2b7, 11);
         PutBit(&bs, HE_V1, 5);
         PutBit(&bs, 1, 1);
