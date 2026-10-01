@@ -436,8 +436,16 @@ int mp4_add_custom_tag(const char *name, const char *value) {
         g_mp4.custom = tmp;
         g_mp4.customcap = new_cap;
     }
-    g_mp4.custom[g_mp4.customcnt].name = name;
-    g_mp4.custom[g_mp4.customcnt].value = value;
+    /* Callers free their strings once this returns, so keep our own copies. */
+    char *name_copy = strdup(name);
+    char *value_copy = strdup(value);
+    if (!name_copy || !value_copy) {
+        free(name_copy);
+        free(value_copy);
+        return -1;
+    }
+    g_mp4.custom[g_mp4.customcnt].name = name_copy;
+    g_mp4.custom[g_mp4.customcnt].value = value_copy;
     g_mp4.customcnt++;
     return 0;
 }
@@ -812,6 +820,10 @@ int mp4_finish(void) {
    mp4_close() -- they don't survive it. */
 int mp4_close(void) {
     reset_write_state();
+    for (uint32_t i = 0; i < g_mp4.customcnt; i++) {
+        free((void *)g_mp4.custom[i].name);
+        free((void *)g_mp4.custom[i].value);
+    }
     free(g_mp4.custom);
     g_mp4.custom = NULL;
     g_mp4.customcnt = 0;
