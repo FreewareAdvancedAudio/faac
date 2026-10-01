@@ -61,7 +61,7 @@ static inline uint64_t bswap64(uint64_t x) {
 }
 #endif
 
-#if WORDS_BIGENDIAN
+#ifdef WORDS_BIGENDIAN
 # define htobe16(x) ((uint16_t)(x))
 # define htobe32(x) ((uint32_t)(x))
 # define htobe64(x) ((uint64_t)(x))

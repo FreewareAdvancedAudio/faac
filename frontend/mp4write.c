@@ -737,7 +737,7 @@ int mp4_finish(void) {
         if (!grow_membuf(stsz_size))
             return 1;
         uint8_t *p = g_membuf + g_mempos;
-#if WORDS_BIGENDIAN
+#ifdef WORDS_BIGENDIAN
         memcpy(p, g_mp4.frame.data, stsz_size);
 #else
         for (uint32_t i = 0; i < g_mp4.frame.ents; i++) {
