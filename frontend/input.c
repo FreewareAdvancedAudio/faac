@@ -174,11 +174,7 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
   }
   else
   {
-#ifdef _WIN32
-    wave_f = win32_fopen_utf8(name, "rb");
-#else
-    wave_f = fopen(name, "rb");
-#endif
+    wave_f = cli_fopen(name, "rb");
     if (!wave_f)
     {
       perror(name);

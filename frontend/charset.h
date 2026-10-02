@@ -48,6 +48,18 @@ int win32_access_utf8(const char *utf8_path, int amode);
 int win32_mtime_utf8(const char *utf8_path, time_t *mtime);
 #endif
 
+/* fopen() a UTF-8 path: win32_fopen_utf8() on Windows, plain fopen()
+   elsewhere. Same open-failure semantics as fopen() either way -- callers
+   still check the returned NULL and report the error themselves. */
+FILE *cli_fopen(const char *path, const char *mode);
+
+/* Format a CLI version with the build's short Git revision when available. */
+const char *cli_version_string(char *buf, size_t buf_size, const char *version);
+
+/* Print project attribution and the shared LGPL-2.1-or-later notice. */
+void cli_print_patent_notice(FILE *stream);
+void cli_print_lgpl_notice(FILE *stream, const char *subject);
+
 #ifdef __cplusplus
 }
 #endif

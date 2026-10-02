@@ -8,7 +8,12 @@ FAAC is an open-source, dependency-free AAC encoder aimed at embedded and pipeli
 - Sample rates from 8 kHz to 96 kHz, supporting mono up to 7.1 multichannel
 - VBR, ABR and CBR rate control
 - Advanced encoding tools: Dynamic block-switching, PNS, and TNS
-- Flexible output options: Raw ADTS, ADIF bitstream
+- Flexible output options: ADTS and raw AAC streams
+
+### Command-line tools:
+
+- `faac` reads and writes MP4/M4A with gapless playback info, as well as raw ADTS
+- WAV and raw PCM input, with stdin/stdout piping
 
 ## Copyrights
 
@@ -38,12 +43,25 @@ Lesser General Public License for more details.
 ## Compiling Instructions
 
 1. Make sure you have recent versions of meson and ninja installed.
-2. cd to FAAC source dir
+2. cd to the source dir
 3. Run:
    ```bash
-   mkdir -p build
-   cd build
-   meson setup ..
-   meson install
+   meson setup build
+   ninja -C build
+   meson install -C build
    ```
 
+### Build options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `frontend` | true | Build the `faac` command-line tool |
+| `max-channels` | 8 | Maximum number of channels (1-8) |
+| `sbr-decimation` | 1 | Encoder SBR analysis density (1 = full quality, up to 8 = faster) |
+| `stats` | false | End-of-stream diagnostics on stderr (instrumentation only) |
+
+## Usage
+
+```bash
+faac input.wav -o output.m4a        # encode
+```

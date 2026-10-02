@@ -226,33 +226,6 @@ static struct {
     {0}
 };
 
-char *license =
-    "\nPlease note that the use of this software may require the payment of patent\n"
-    "royalties. You need to consider this issue before you start building derivative\n"
-    "works. We are not warranting or indemnifying you in any way for patent\n"
-    "royalities! YOU ARE SOLELY RESPONSIBLE FOR YOUR OWN ACTIONS!\n"
-    "\n"
-    "FAAC is free software, licensed under the GNU Lesser General Public\n"
-    "License (LGPL), version 2.1 or later:\n"
-    "\n"
-    "FAAC - Freeware Advanced Audio Coder\n"
-    "Copyright (C) 1999-2001, Menno Bakker\n"
-    "Copyright (C) 2002-2017, Krzysztof Nikiel\n"
-    "Copyright (C) 2004, Dan Villiom P. Christiansen\n"
-    "Copyright (C) 2005-2026, Fabian Greffrath\n"
-    "Copyright (C) 2026, Nils Schimmelmann\n"
-    "\n"
-    "This library is free software; you can redistribute it and/or\n"
-    "modify it under the terms of the GNU Lesser General Public\n"
-    "License as published by the Free Software Foundation; either\n"
-    "version 2.1 of the License, or (at your option) any later version.\n"
-    "\n"
-    "This library is distributed in the hope that it will be useful,\n"
-    "but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
-    "MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU\n"
-    "Lesser General Public License for more details.\n"
-    "\n";
-
 #ifndef _WIN32
 volatile int running = 1;
 static void signal_handler(int signal)
@@ -615,7 +588,8 @@ int main(int argc, char *argv[])
         case 'L':
             if (libinfo.copyright)
                 fprintf(stderr, "%s", libinfo.copyright);
-            fprintf(stderr, "%s", license);
+            cli_print_patent_notice(stderr);
+            cli_print_lgpl_notice(stderr, "library");
             ret = 0;
             goto cleanup;
         case 'X':
@@ -770,11 +744,7 @@ int main(int argc, char *argv[])
             break;
         case COVER_ART_FLAG:
             {
-#ifdef _WIN32
-                FILE *f = win32_fopen_utf8(optarg, "rb");
-#else
-                FILE *f = fopen(optarg, "rb");
-#endif
+                FILE *f = cli_fopen(optarg, "rb");
                 if (f)
                 {
                     fseek(f, 0, SEEK_END);
