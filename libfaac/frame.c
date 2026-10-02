@@ -85,7 +85,7 @@
 
 static char *libfaacName = PACKAGE_VERSION;
 static char *libCopyright =
-  "FAAC - Freeware Advanced Audio Coder (http://faac.sourceforge.net/)\n"
+  "FAAC - Freeware Advanced Audio Coder (https://freewareadvancedaudio.github.io)\n"
   " Copyright (C) 1999-2001, Menno Bakker\n"
   " Copyright (C) 2002-2017, Krzysztof Nikiel\n"
   " Copyright (C) 2004, Dan Villiom P. Christiansen\n"
@@ -154,7 +154,7 @@ int faacEncGetDecoderSpecificInfo(faacEncHandle hpEncoder,unsigned char** ppBuff
     }
 
     *pSizeOfDecoderSpecificInfo = 2;
-    *ppBuffer = (unsigned char *)malloc(2);
+    *ppBuffer = (unsigned char *)AllocMemory(2);
 
     if(*ppBuffer != NULL){
         BitStream bs;

@@ -39,7 +39,6 @@
 #include "input.h"
 #include "mp4write.h"
 #include "charset.h"
-#include "git_version.h"
 
 void init_encode_options(encode_options_t *opts)
 {
@@ -97,14 +96,9 @@ bool add_custom_tag_to_options(encode_options_t *opts, const char *name, const c
     return true;
 }
 
-/* FAAC_GIT_VERSION: short commit hash (+ "-dirty"), or "" with no .git. */
 const char *faac_version_string(char *buf, size_t buf_size, const char *lib_version)
 {
-    if (FAAC_GIT_VERSION[0])
-        snprintf(buf, buf_size, "%s (%s)", lib_version, FAAC_GIT_VERSION);
-    else
-        snprintf(buf, buf_size, "%s", lib_version);
-    return buf;
+    return cli_version_string(buf, buf_size, lib_version);
 }
 
 void free_encode_options(encode_options_t *opts)
@@ -594,11 +588,19 @@ int run_encoding_session_ext(const encode_options_t *opts,
         if (opts->output_filename && !strcmp(opts->output_filename, "-"))
             FAIL("Cannot encode MP4 to stdout\n");
 
+        if (!opts->overwrite &&
+#ifdef _WIN32
+            win32_access_utf8(opts->output_filename, 0) == 0)
+#else
+            access(opts->output_filename, 0) == 0)
+#endif
+            FAIL("Output file %s already exists (use --overwrite)\n", opts->output_filename);
         if (mp4_open(opts->output_filename, opts->overwrite) != 0)
             FAIL("Couldn't create MP4 output file %s\n", opts->output_filename);
         mp4_is_open = true;
         mp4_set_format(rc_scalar(rc, sample_rate), num_channels, infile->samplebytes * 8);
         mp4_set_constant_rate(opts->cbr);
+        mp4_set_language(opts->metadata.language);
     }
     else if (opts->output_filename)
     {
@@ -613,11 +615,11 @@ int run_encoding_session_ext(const encode_options_t *opts,
         {
 #ifdef _WIN32
             if (!opts->overwrite && win32_access_utf8(opts->output_filename, 0) == 0)
-                FAIL("Output file %s already exists\n", opts->output_filename);
+                FAIL("Output file %s already exists (use --overwrite)\n", opts->output_filename);
             outfile = win32_fopen_utf8(opts->output_filename, "wb");
 #else
             if (!opts->overwrite && access(opts->output_filename, 0) == 0)
-                FAIL("Output file %s already exists\n", opts->output_filename);
+                FAIL("Output file %s already exists (use --overwrite)\n", opts->output_filename);
             outfile = fopen(opts->output_filename, "wb");
 #endif
             if (!outfile)
