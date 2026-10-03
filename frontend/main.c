@@ -176,13 +176,14 @@ static help_t help_io[] = {
 };
 
 static help_t help_mp4[] = {
-    {"--tag <tagname,tagvalue> Add named tag (iTunes '----')\n", NULL},
+    {"--tag <tagname=tagvalue> Add named tag (iTunes '----')\n",
+    "\t\tSeparated by = or ,. Enclose in quotes if spaces are present.\n"},
     {"--artist <name>\tSet artist name\n", NULL},
     {"--artistsort <name>\tSet artist sort order\n", NULL},
     {"--composer <name>\tSet composer name\n", NULL},
     {"--composersort <name>\tSet composer sort order\n", NULL},
     {"--title <name>\tSet title/track name\n", NULL},
-    {"--genre <number>\tSet genre number\n", NULL},
+    {"--genre <number|name>\tSet genre number or name\n", NULL},
     {"--album <name>\tSet album/performer\n", NULL},
     {"--albumartist <name>\tSet album artist\n", NULL},
     {"--albumartistsort <name>\tSet album artist sort order\n", NULL},
@@ -647,31 +648,31 @@ int main(int argc, char *argv[])
             opts.raw_pcm_input = true;
             break;
         case ARTIST_FLAG:
-            opts.metadata.artist = optarg;
+            opts.metadata.artist = trim_quotes_and_spaces(optarg);
             break;
         case ARTIST_SORT_FLAG:
-            opts.metadata.artist_sort = optarg;
+            opts.metadata.artist_sort = trim_quotes_and_spaces(optarg);
             break;
         case WRITER_FLAG:
-            opts.metadata.composer = optarg;
+            opts.metadata.composer = trim_quotes_and_spaces(optarg);
             break;
         case WRITER_SORT_FLAG:
-            opts.metadata.composer_sort = optarg;
+            opts.metadata.composer_sort = trim_quotes_and_spaces(optarg);
             break;
         case TITLE_FLAG:
-            opts.metadata.title = optarg;
+            opts.metadata.title = trim_quotes_and_spaces(optarg);
             break;
         case ALBUM_FLAG:
-            opts.metadata.album = optarg;
+            opts.metadata.album = trim_quotes_and_spaces(optarg);
             break;
         case ALBUM_ARTIST_FLAG:
-            opts.metadata.album_artist = optarg;
+            opts.metadata.album_artist = trim_quotes_and_spaces(optarg);
             break;
         case ALBUM_ARTIST_SORT_FLAG:
-            opts.metadata.album_artist_sort = optarg;
+            opts.metadata.album_artist_sort = trim_quotes_and_spaces(optarg);
             break;
         case ALBUM_SORT_FLAG:
-            opts.metadata.album_sort = optarg;
+            opts.metadata.album_sort = trim_quotes_and_spaces(optarg);
             break;
         case TRACK_FLAG:
             if (sscanf(optarg, "%hu/%hu", &opts.metadata.track, &opts.metadata.ntracks) < 1)
@@ -682,19 +683,14 @@ int main(int argc, char *argv[])
                 dieMessage = "Wrong disc number.\n";
             break;
         case GENRE_FLAG:
-            {
-                int g = atoi(optarg);
-                if (g < 0 || g > 255)
-                    dieMessage = "Genre number out of range.\n";
-                else
-                    opts.metadata.genre_id = (uint16_t)(g + 1);
-            }
+            if (!parse_genre(trim_quotes_and_spaces(optarg), &opts.metadata.genre_id, &opts.metadata.genre))
+                dieMessage = "Genre number out of range.\n";
             break;
         case YEAR_FLAG:
-            opts.metadata.year = optarg;
+            opts.metadata.year = trim_quotes_and_spaces(optarg);
             break;
         case COMMENT_FLAG:
-            opts.metadata.comment = optarg;
+            opts.metadata.comment = trim_quotes_and_spaces(optarg);
             break;
         case MPEGVERS_FLAG:
             switch (atoi(optarg))
@@ -723,7 +719,17 @@ int main(int argc, char *argv[])
         case TAG_FLAG:
             {
                 char *tagname = optarg;
-                char *tagval = strchr(optarg, ',');
+                char *eq = strchr(optarg, '=');
+                char *comma = strchr(optarg, ',');
+                char *tagval = NULL;
+
+                if (eq && comma)
+                    tagval = (eq < comma) ? eq : comma;
+                else if (eq)
+                    tagval = eq;
+                else
+                    tagval = comma;
+
                 if (!tagval)
                 {
                     dieMessage = "Missing tag value.\n";
@@ -731,7 +737,12 @@ int main(int argc, char *argv[])
                 else
                 {
                     *tagval++ = '\0';
-                    if (*tagval == '\0')
+                    tagname = trim_quotes_and_spaces(tagname);
+                    tagval = trim_quotes_and_spaces(tagval);
+
+                    if (*tagname == '\0')
+                        dieMessage = "Tag name cannot be empty.\n";
+                    else if (*tagval == '\0')
                         dieMessage = "Tag value cannot be empty.\n";
                 }
                 if (!dieMessage)
@@ -865,9 +876,10 @@ int main(int argc, char *argv[])
                         opts.metadata.album_artist_sort || opts.metadata.composer ||
                         opts.metadata.composer_sort || opts.metadata.year ||
                         opts.metadata.comment || opts.metadata.genre_id ||
-                        opts.metadata.track || opts.metadata.disc ||
-                        opts.metadata.compilation || opts.metadata.language ||
-                        opts.art_data || opts.custom_tag_count > 0 || has_custom_tags;
+                        opts.metadata.genre || opts.metadata.track ||
+                        opts.metadata.disc || opts.metadata.compilation ||
+                        opts.metadata.language || opts.art_data ||
+                        opts.custom_tag_count > 0 || has_custom_tags;
 
     if (!opts.container_mp4 && has_metadata)
     {
