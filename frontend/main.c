@@ -86,6 +86,7 @@ enum flags
     OPT_OVERWRITE,
     OPT_COMPILATION,
     OPT_IGNORE_LENGTH,
+    OPT_NO_ENCODER_INFO,
     LANG_FLAG
 };
 
@@ -195,6 +196,8 @@ static const help_t help_mp4[] = {
      "Set ISO 639-2/T 3-letter language code (e.g. eng, ger)", NULL},
     {"--creation-time <value>",
      "Set creation/modification time (auto, now, or timestamp)", NULL},
+    {"--no-encoder-info",
+     "Do not write the encoder tag (FAAC version and settings) to the MP4", NULL},
     {NULL, NULL, NULL}
 };
 
@@ -516,6 +519,7 @@ int main(int argc, char *argv[])
             {"language", 1, 0, LANG_FLAG},
             {"cap-rate", 1, 0, CAP_RATE_FLAG},
             {"cbr", 0, 0, CBR_FLAG},
+            {"no-encoder-info", 0, 0, OPT_NO_ENCODER_INFO},
             {0, 0, 0, 0}
         };
 
@@ -533,6 +537,7 @@ int main(int argc, char *argv[])
         case OPT_OVERWRITE: opts.overwrite = true; break;
         case OPT_COMPILATION: opts.metadata.compilation = true; break;
         case OPT_IGNORE_LENGTH: opts.ignore_wav_length = true; break;
+        case OPT_NO_ENCODER_INFO: opts.encoder_info = false; break;
         case 'L':
             if (libinfo.copyright)
                 fprintf(stderr, "%s", libinfo.copyright);

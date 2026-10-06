@@ -216,8 +216,14 @@ quotes if the name or value contains spaces (e.g. \-\-tag "copyright=John Doe").
 .BR --artist\ <\fIname\fP>
 Set artist name
 .TP
+.BR --artistsort\ <\fIname\fP>
+Set artist sort order
+.TP
 .BR --composer\ <\fIname\fP>
 Set composer name
+.TP
+.BR --composersort\ <\fIname\fP>
+Set composer sort order
 .TP
 .BR --title\ <\fIname\fP>
 Set title/track name
@@ -227,6 +233,15 @@ Set genre number or name (e.g., 14, Pop, or "Classic Rock").
 .TP
 .BR --album\ <\fIname\fP>
 Set album/performer
+.TP
+.BR --albumsort\ <\fIname\fP>
+Set album sort order
+.TP
+.BR --albumartist\ <\fIname\fP>
+Set album artist
+.TP
+.BR --albumartistsort\ <\fIname\fP>
+Set album artist sort order
 .TP
 .BR --compilation
 Mark as compilation
@@ -246,6 +261,28 @@ Supported image formats are GIF, JPEG, and PNG.
 .TP
 .BR --comment\ <\fIstring\fP>
 Set comment
+.TP
+.BR --lang\ <\fIcode3\fP>
+Set the ISO 639-2/T three-letter language code (e.g. eng, ger).
+.B --language
+is an alias.
+.TP
+.BR --creation-time\ <\fIvalue\fP>
+Set the MP4 creation and modification time:
+.B auto
+(the input file's modification time),
+.B now
+or a Unix timestamp in seconds. Left out, the time is
+.B SOURCE_DATE_EPOCH
+if set, otherwise 0.
+.TP
+.BR --no-encoder-info
+Do not write the encoder tag
+.RI ( \[u00A9]too ).
+By default it holds the FAAC version, the rate, cutoff and object type, and any
+options changed from their defaults, e.g.
+.IR "FAAC x.y.z (hash), ABR 64kbps, cutoff 14500Hz, LC, stereo M/S, no TNS" .
+Without it, output no longer varies with the FAAC build, so identical audio gives byte-identical files.
 .SH ADVANCED OPTIONS, ONLY FOR TESTING PURPOSES
 .TP
 .BR --mpeg-vers\ \fIX\fP
@@ -253,6 +290,10 @@ Force AAC MPEG version, X can be 2 or 4
 .TP
 .BR --shortctl\ \fIX\fP
 Enforce block type (0 = both (default); 1 = no short; 2 = no long).
+.SH PATENTS
+The use of this software may require the payment of patent royalties. Consider
+this before building derivative works; the authors give no warranty or
+indemnification against patent claims.
 .SH AUTHORS
 .B FAAC
 was written by M. Bakker.

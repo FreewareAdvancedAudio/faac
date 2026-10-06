@@ -91,6 +91,7 @@ typedef struct {
 
     bool ignore_wav_length;
     bool overwrite;
+    bool encoder_info;   /* write the (c)too tool atom: version and settings */
 
     mp4_metadata_t metadata;
     const char *creation_time_str;
