@@ -866,15 +866,6 @@ int faacEncEncode(faacEncHandle hpEncoder,
             coderInfo[channel].block_type = ONLY_SHORT_WINDOW;
     }
 
-    /* AAC Filterbank, MDCT with overlap and add */
-    for (channel = 0; channel < numChannels; channel++) {
-        FilterBank(hEncoder,
-            &coderInfo[channel],
-            hEncoder->audioFIFO[channel][FIFO_PAST],
-            hEncoder->audioFIFO[channel][FIFO_CURR],
-            hEncoder->freqBuff[channel]);
-    }
-
     for (channel = 0; channel < numChannels; channel++) {
         if (coderInfo[channel].block_type == ONLY_SHORT_WINDOW) {
             coderInfo[channel].sfbn = hEncoder->aacquantCfg.max_cbs;
@@ -896,6 +887,9 @@ int faacEncEncode(faacEncHandle hpEncoder,
         int r = (el->type == ID_CPE) ? el->channels[1] : -1;
         CoderInfo *a = NULL, *b = NULL;
         float *xa = NULL, *xb = NULL;
+
+        /* AAC Filterbank, MDCT with overlap and add */
+        FilterBankElement(hEncoder, coderInfo, el);
 
         if (coderInfo[l].block_type == ONLY_SHORT_WINDOW)
         {
