@@ -56,6 +56,7 @@ Lesser General Public License for more details.
 | Option | Default | Description |
 |--------|---------|-------------|
 | `frontend` | true | Build the `faac` command-line tool |
+| `frontend-static` | false | Link the frontend executables to the static libfaac library |
 | `max-channels` | 8 | Maximum number of channels (1-8) |
 | `sbr-decimation` | 1 | Encoder SBR analysis density (1 = full quality, up to 8 = faster) |
 | `stats` | false | End-of-stream diagnostics on stderr (instrumentation only) |
