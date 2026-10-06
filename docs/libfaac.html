@@ -59,7 +59,8 @@ half-configured state, and every derived quantity (frame size, output-buffer
 bound, effective sample rate, resolved object type) is known and queryable the
 instant open returns. Every fallible call returns a <i>faac_status</i> code;
 fixed-width integer types and width-pinned enums keep the ABI identical across
-platforms.
+64-bit platforms (LP64 and LLP64), regardless of -fshort-enums. 32-bit targets
+have their own layout because of pointer fields.
 
 <a name="api-callseq">
 <h5>Calling sequence</h5>
