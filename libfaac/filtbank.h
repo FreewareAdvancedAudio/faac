@@ -33,11 +33,9 @@ void			FilterBankEnd		( faacEncStruct* hEncoder );
 
 void			MDCT				( float * restrict data, int N, float * restrict work );
 
-void			FilterBank( faacEncStruct* hEncoder,
-						CoderInfo *coderInfo,
-						float * restrict p_prev_data,
-						float * restrict p_in_data,
-						float * restrict p_out_mdct);
+/* Windows and transforms every channel of one element into freqBuff, choosing
+ * the element's long-window shape (sine or KBD) on the way. */
+void			FilterBankElement( faacEncStruct* hEncoder, CoderInfo *coderInfo, const AACElement *el );
 
 
 #ifdef __cplusplus
