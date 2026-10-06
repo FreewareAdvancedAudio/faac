@@ -140,7 +140,7 @@ SBRInfo *SbrInit(int channels, int sampleRate, unsigned long bitRate)
 {
     SBRInfo *sbr = (SBRInfo *)AllocMemory(sizeof(SBRInfo));
     if (!sbr) return NULL;
-    SetMemory(sbr, 0, sizeof(SBRInfo));
+    memset(sbr, 0, sizeof(SBRInfo));
     sbr->sbrPresent = 1;
     sbr->numChannels = channels;
     sbr->sampleRate = sampleRate;
@@ -196,7 +196,7 @@ void SbrEnd(SBRInfo *sbr)
  * legal payload: numEnvelopes == 0 encodes no grid at all. */
 static void sbr_frame_silence(SbrFrameData *fd)
 {
-    SetMemory(fd, 0, sizeof(*fd));
+    memset(fd, 0, sizeof(*fd));
     fd->numEnvelopes = 1;
     fd->eff_amp_res  = 0;
     fd->frameClass   = SBR_FRAME_CLASS_FIXFIX;
@@ -210,7 +210,7 @@ SBRContext *SbrContextInit(int channels)
 {
     SBRContext *sbrCtx = (SBRContext *)AllocMemory(sizeof(SBRContext));
     if (sbrCtx) {
-        SetMemory(sbrCtx, 0, sizeof(SBRContext));
+        memset(sbrCtx, 0, sizeof(SBRContext));
         sbrCtx->resampler = ResampleInit(channels);
         if (!sbrCtx->resampler) {
             FreeMemory(sbrCtx);
@@ -284,13 +284,14 @@ unsigned int SbrContextGetXOverBandwidth(SBRContext *sbrCtx)
                            (2 * SBR_QMF_BANDS_64));
 }
 
-void SbrContextUpdateConfig(SBRContext *sCtx, int channels, unsigned long bitrate)
+int SbrContextUpdateConfig(SBRContext *sCtx, int channels, unsigned long bitrate)
 {
-    if (!sCtx) return;
+    if (!sCtx) return 0;
     if (!sCtx->sbrInfo)
         sCtx->sbrInfo = SbrInit(channels, sCtx->fullSampleRate, bitrate);
     else
         SbrUpdate(sCtx->sbrInfo, bitrate);
+    return sCtx->sbrInfo != NULL;
 }
 
 void SbrContextProcessFrame(SBRContext *sCtx, int numChannels, const bool *isLfe, int realPerCh, int flushTick, float *inputFifo[MAX_CHANNELS], float *heHalfRate[MAX_CHANNELS])
