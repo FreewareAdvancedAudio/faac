@@ -63,6 +63,7 @@ void init_encode_options(encode_options_t *opts)
     opts->raw_bits = 16;
     opts->raw_rate = 44100;
     opts->raw_endian = true;
+    opts->encoder_info = true;
     opts->verbose = 1;
 }
 
@@ -257,7 +258,61 @@ static uint32_t rc_advance(rate_conv_t *rc, uint64_t new_pos)
     return delta;
 }
 
-static bool finalize_mp4(faac_encoder *hEncoder, const encode_options_t *opts,
+/* Settings for the (c)too atom, in fdkaac's style: ", "-separated fields, each
+   a short phrase ("ABR 64kbps", "cutoff 14500Hz"). Rates are the whole stream,
+   as -b takes them; info->bit_rate is per channel.
+   Rate, object type and cutoff are always written: the build resolves them, so
+   their defaults aren't stable. Options the user sets are written only when
+   they differ from init_encode_options(). */
+static char *format_encoding_params(const encode_options_t *opts, const faac_encoder_info *info,
+                                    uint16_t num_channels)
+{
+    char buf[512];
+    int pos = 0;
+
+#define ADD(...) \
+    do { \
+        if (pos < (int)sizeof(buf)) \
+            pos += snprintf(buf + pos, sizeof(buf) - pos, __VA_ARGS__); \
+    } while (0)
+
+    if (info->rate_control == FAAC_RC_VBR) {
+        ADD("VBR quality %u", info->quant_quality);
+    } else {
+        uint32_t total = info->bit_rate * (num_channels ? num_channels : 1);
+        ADD("%s %ukbps", info->rate_control == FAAC_RC_CBR ? "CBR" : "ABR", (total + 500) / 1000);
+    }
+
+    if (opts->max_bit_rate > 0)
+        ADD(", cap %ukbps", (opts->max_bit_rate + 500) / 1000);
+
+    ADD(", cutoff %uHz", info->bandwidth);
+    ADD(", %s", info->object_type == FAAC_OBJ_HE_AAC_V1 ? "HE-AAC" : "LC");
+
+    /* Mono has no channel pairs, so the stereo mode would claim a tool that
+       never ran. */
+    if (num_channels >= 2) {
+        switch (opts->joint_mode) {
+        case FAAC_JOINT_NONE:  ADD(", stereo L/R"); break;
+        case FAAC_JOINT_MS:    ADD(", stereo M/S"); break;
+        case FAAC_JOINT_IS:    ADD(", stereo IS"); break;
+        default: break;
+        }
+    }
+
+    if (!opts->use_tns) ADD(", no TNS");
+    if (!opts->use_pns) ADD(", no PNS");
+
+    if (opts->shortctl == FAAC_SHORTCTL_NOSHORT)
+        ADD(", noshort");
+    else if (opts->shortctl == FAAC_SHORTCTL_NOLONG)
+        ADD(", nolong");
+#undef ADD
+
+    return strdup(buf);
+}
+
+static bool finalize_mp4(faac_encoder *hEncoder, const encode_options_t *opts, uint16_t num_channels,
                           log_message_callback_t log_cb, void *user_data)
 {
     char *allocated_tags[MP4TAG_COUNT + 1] = { 0 };
@@ -345,7 +400,7 @@ static bool finalize_mp4(faac_encoder *hEncoder, const encode_options_t *opts,
 
     mp4_metadata_t metadata = opts->metadata;
 
-    if (libinfo.version)
+    if (opts->encoder_info && libinfo.version)
     {
         char *version_string = malloc(128);
         if (version_string)
@@ -382,6 +437,27 @@ static bool finalize_mp4(faac_encoder *hEncoder, const encode_options_t *opts,
     SETTAG(MP4TAG_YEAR, metadata.year);
     SETTAG(MP4TAG_COMMENT, metadata.comment);
 #undef SETTAG
+
+    if (hEncoder && metadata.encoder)
+    {
+        faac_encoder_info info = { .struct_size = sizeof(info) };
+        faac_encoder_get_info(hEncoder, &info);
+        char *param_str = format_encoding_params(opts, &info, num_channels);
+        if (param_str)
+        {
+            size_t len = strlen(metadata.encoder) + strlen(param_str) + 3;
+            char *tool = malloc(len);
+            if (tool && num_allocated < (int)(sizeof(allocated_tags) / sizeof(allocated_tags[0])))
+            {
+                snprintf(tool, len, "%s, %s", metadata.encoder, param_str);
+                metadata.encoder = tool;
+                allocated_tags[num_allocated++] = tool;
+            }
+            else
+                free(tool);
+            free(param_str);
+        }
+    }
 
     if (metadata.encoder) mp4_set_encoder(metadata.encoder);
     if (metadata.language) mp4_set_language(metadata.language);
@@ -785,7 +861,7 @@ int run_encoding_session_ext(const encode_options_t *opts,
         mp4_set_gapless(rc_scalar(rc, priming), rc_scalar(rc, padding),
                          rc_scalar(rc, current_input_samples));
 
-        if (!finalize_mp4(hEncoder, opts, log_cb, user_data))
+        if (!finalize_mp4(hEncoder, opts, num_channels, log_cb, user_data))
         {
             ret = 1;
             goto cleanup;
