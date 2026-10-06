@@ -1,4 +1,4 @@
-# <img src="frontend/faac.ico" alt="FAAC" width="48" height="48" align="top" /> Freeware Advanced Audio Coder
+# <img src="frontend/faac.svg" alt="FAAC" width="48" height="48" align="top" /> Freeware Advanced Audio Coder
 
 FAAC is an open-source, dependency-free AAC encoder aimed at embedded and pipeline use cases where footprint and throughput matter as much as quality.
 
@@ -12,7 +12,7 @@ FAAC is an open-source, dependency-free AAC encoder aimed at embedded and pipeli
 
 ### Command-line tools:
 
-- `faac` reads and writes MP4/M4A with gapless playback info, as well as raw ADTS
+- `faac` writes MP4/M4A with gapless playback info, as well as raw ADTS
 - WAV and raw PCM input, with stdin/stdout piping
 
 ## Copyrights
@@ -38,7 +38,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 Lesser General Public License for more details.
 ```
 
-> **Important:** The use of this software may require the payment of patent royalties. You need to consider this issue before you start building derivative works. We are not warranting or indemnifying you in any way for patent royalities! **YOU ARE SOLELY RESPONSIBLE FOR YOUR OWN ACTIONS!**
+> **Important:** The use of this software may require the payment of patent royalties. You need to consider this issue before you start building derivative works. We are not warranting or indemnifying you in any way for patent royalties! **YOU ARE SOLELY RESPONSIBLE FOR YOUR OWN ACTIONS!**
 
 ## Compiling Instructions
 
@@ -59,6 +59,8 @@ Lesser General Public License for more details.
 | `max-channels` | 8 | Maximum number of channels (1-8) |
 | `sbr-decimation` | 1 | Encoder SBR analysis density (1 = full quality, up to 8 = faster) |
 | `stats` | false | End-of-stream diagnostics on stderr (instrumentation only) |
+
+Library integration: [FAAC encoder API](docs/libfaac.md).
 
 ## Usage
 
