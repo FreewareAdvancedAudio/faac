@@ -20,9 +20,11 @@
 #include <string.h>
 #include <stdbool.h>
 #include <time.h>
+#include <locale.h>
 
 #ifdef _WIN32
 #include <io.h>
+#include <windows.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #elif defined(HAVE_ICONV)
@@ -37,7 +39,47 @@
 #ifndef strcasecmp
 #define strcasecmp _stricmp
 #endif
+
+static UINT s_orig_output_cp = 0;
+static bool s_cp_saved = false;
+
+static void win32_restore_console_cp(void)
+{
+    if (s_cp_saved && s_orig_output_cp != 0)
+        SetConsoleOutputCP(s_orig_output_cp);
+}
+
+static bool win32_has_console_output(void)
+{
+    HANDLE handles[] = { GetStdHandle(STD_OUTPUT_HANDLE), GetStdHandle(STD_ERROR_HANDLE) };
+    for (size_t i = 0; i < sizeof(handles) / sizeof(handles[0]); i++)
+    {
+        DWORD mode;
+        if (handles[i] != NULL && handles[i] != INVALID_HANDLE_VALUE &&
+            GetConsoleMode(handles[i], &mode))
+            return true;
+    }
+    return false;
+}
 #endif
+
+void cli_init_console(void)
+{
+#ifdef _WIN32
+    if (!s_cp_saved && win32_has_console_output())
+    {
+        s_orig_output_cp = GetConsoleOutputCP();
+        if (s_orig_output_cp != 0 && SetConsoleOutputCP(CP_UTF8))
+        {
+            s_cp_saved = true;
+            atexit(win32_restore_console_cp);
+        }
+    }
+    setlocale(LC_CTYPE, ".UTF-8");
+#else
+    setlocale(LC_CTYPE, "");
+#endif
+}
 
 static const char *id3_genres[] = {
     "Blues", "Classic Rock", "Country", "Dance",
