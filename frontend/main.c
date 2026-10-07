@@ -396,6 +396,8 @@ static void cli_summary_callback(const encode_summary_t *summary, void *user_dat
 
 int main(int argc, char *argv[])
 {
+    cli_init_console();
+
     encode_options_t opts;
     init_encode_options(&opts);
 
@@ -411,9 +413,6 @@ int main(int argc, char *argv[])
 #ifndef _WIN32
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-    /* So charset.c's utf8_ensure() can read the real locale codeset via
-       nl_langinfo() instead of always seeing the default "C" locale. */
-    setlocale(LC_CTYPE, "");
 #endif
 
     faac_library_info libinfo = { .struct_size = sizeof(libinfo) };

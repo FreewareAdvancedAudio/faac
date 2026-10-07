@@ -25,6 +25,9 @@
 extern "C" {
 #endif
 
+/* Initialize character handling and UTF-8 console output where applicable */
+void cli_init_console(void);
+
 /* Ensure string is valid UTF-8, converting from system encoding if needed */
 char *utf8_ensure(const char *str);
 
