@@ -114,9 +114,6 @@ int PsyInit(GlobalPsyInfo * gpsyInfo, PsyInfo * psyInfo, unsigned int numChannel
     psyInfo[channel].size = size;
   }
 
-  size = BLOCK_LEN_SHORT;
-  for (channel = 0; channel < numChannels; channel++)
-    psyInfo[channel].sizeS = size;
   return 1;
 }
 

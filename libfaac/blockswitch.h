@@ -26,7 +26,6 @@ extern "C" {
 
 typedef struct {
 	int size;
-	int sizeS;
 
 	int block_type;
 
