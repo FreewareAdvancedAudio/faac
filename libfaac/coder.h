@@ -54,12 +54,11 @@ enum { SINE_WINDOW = 0, KBD_WINDOW = 1 };
 #define DEF_TNS_RES_OFFSET 3
 
 typedef struct {
-    int order;                           /* Filter order */
-    int direction;                       /* Filtering direction */
-    int coefCompress;                    /* Are coeffs compressed? */
-    int length;                          /* Length, in bands */
-    float aCoeffs[TNS_MAX_ORDER+1];       /* LPC (AR) coefficients */
-    int index[TNS_MAX_ORDER+1];          /* Quantized reflection-coeff indices */
+    uint8_t order;                        /* Filter order */
+    uint8_t direction;                    /* Filtering direction */
+    uint8_t coefCompress;                 /* Are coeffs compressed? */
+    uint8_t length;                       /* Length, in bands */
+    int8_t index[TNS_MAX_ORDER+1];         /* Quantized reflection-coeff indices */
 } TnsFilterData;
 
 typedef struct {
@@ -84,7 +83,7 @@ typedef struct CoderInfo {
 
     int global_gain;
     int sf[MAX_SCFAC_BANDS];
-    int book[MAX_SCFAC_BANDS];
+    uint8_t book[MAX_SCFAC_BANDS]; /* HCB_ZERO through HCB_NONE (0..16) */
     int bandcnt;
     int sfbn;
     /* Points at the encoder's prebuilt long or short table (frame.c); the
@@ -97,16 +96,6 @@ typedef struct CoderInfo {
         int len[MAX_SHORT_WINDOWS];
     } groups;
 
-    /* worst case: one codeword with two escapes per two spectral lines */
-#define DATASIZE (3*FRAME_LEN/2)
-
-    struct {
-        int data;
-        int len;
-    } s[DATASIZE];
-    int datacnt;
-
-
     TnsInfo tnsInfo;
 
     struct CoderInfo *partner;            /* common-window CPE: the right channel, set on the left */
@@ -117,6 +106,13 @@ typedef struct CoderInfo {
     float msEl[MAX_SCFAC_BANDS];          /* M/S band: this channel's L/R energy; 0 = not M/S */
     const float *msPeer;                  /* the other channel's msEl[] */
     uint8_t *msUsed;                      /* the element's ms_used[], set on the left */
+
+    /* worst case: one codeword with two escapes per two spectral lines */
+#define DATASIZE (3*FRAME_LEN/2)
+
+    /* Escape suffixes need at most 21 bits; the top byte holds the length. */
+    uint32_t s[DATASIZE];
+    int datacnt;
 } CoderInfo;
 
 typedef struct {
