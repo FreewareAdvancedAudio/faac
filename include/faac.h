@@ -247,9 +247,10 @@ typedef struct faac_encoder_info {
     uint32_t                max_bit_rate;     /* resolved peak cap, 0 if unlimited                   */
 
     /* Priming delay in samples/channel at the output rate, as gapless tags
-     * (iTunSMPB, edit list) declare it. Use verbatim for tagging -- not the same
-     * as frame_samples for HE-AAC, and excludes the SBR decoder delay, which
-     * decoders add themselves. */
+     * (iTunSMPB) declare it. An MP4 edit list counts in the track timescale,
+     * which for HE-AAC is the core rate, so the frontend's writer halves this
+     * value there. Not the same as frame_samples for HE-AAC, and excludes the
+     * SBR decoder delay, which decoders add themselves. */
     uint32_t                encoder_delay;
 
     enum faac_rate_control  rate_control;     /* resolved mode (AUTO becomes VBR or ABR)          */
