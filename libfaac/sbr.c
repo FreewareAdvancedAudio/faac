@@ -76,6 +76,10 @@ static int compute_k2(int sampleRate, int bs_stop_freq)
     return k2;
 }
 
+/* Fewest QMF bands between kx and k2 that still yield an envelope band at
+ * every freq_scale; above 64 kHz the 20 kHz target can fall below kx. */
+#define SBR_MIN_SPAN 4
+
 /* Widest k2 - kx decoders accept (§4.6.18.3.2.1). */
 static int max_sbr_span(int sampleRate)
 {
@@ -92,7 +96,7 @@ static int pick_stop_freq(int sampleRate, int kx, int targetHz)
         int k2 = compute_k2(sampleRate, sf);
         if (k2 - kx > max_sbr_span(sampleRate)) break;
         best = sf;
-        if ((long)k2 * sampleRate / (2 * SBR_QMF_BANDS_64) >= targetHz) break;
+        if (k2 - kx >= SBR_MIN_SPAN && (long)k2 * sampleRate / (2 * SBR_QMF_BANDS_64) >= targetHz) break;
     }
     return best;
 }
