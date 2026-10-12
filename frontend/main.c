@@ -105,7 +105,7 @@ static const help_t help_qual[] = {
      "A bit reservoir keeps every frame inside the decoder's input buffer and stuffs any frame that would otherwise overflow it, so the rate lands exactly; ADTS declares the buffer fullness, MP4 the buffer size. For constant-rate channels and matched-rate tests; on a file or a packet network the stuffing is bytes for nothing."},
     {"-c <freq>",
      "Cut the audio off above <freq> Hz.",
-     "Left out, the encoder chooses the cutoff from the bitrate, between 14 and 19 kHz on most stereo settings; VBR codes up to 19 kHz. It is printed at the start. Set it as high as half the sample rate to keep everything; the bitrate rises with it. HE-AAC sets its own and ignores this. The actual frequency is adjusted to a band edge."},
+     "Left out, the encoder chooses the cutoff from the bitrate, between 14 and 19 kHz on most stereo settings; VBR codes up to 19 kHz, or the full band for input above 48 kHz at the default quality or higher. It is printed at the start. Set it as high as half the sample rate to keep everything; the bitrate rises with it. HE-AAC sets its own and ignores this. The actual frequency is adjusted to a band edge."},
     {"--cap-rate <bitrate>",
      "Cap any single frame at <bitrate> kbps.",
      "For packet-oriented transports that cannot fragment a frame, where an oversized frame is dropped rather than split, and for bounding VBR (-q). Must be >= the -b bitrate. Best-effort: quality is backed off until the frame fits, so pathological input can still exceed the cap."},

@@ -142,7 +142,8 @@ percent of frames.
 .BR -c\ <\fIfreq\fP>
 Cut the audio off above <freq> Hz. Left out, the encoder chooses the cutoff
 from the bitrate, between 14 and 19 kHz on most stereo settings; VBR codes up
-to 19 kHz. It is printed at the start of the encode. Set it as high as half
+to 19 kHz, or the full band for input above 48 kHz at the default quality or
+higher. It is printed at the start of the encode. Set it as high as half
 the sample rate to keep everything; the bitrate rises with it. HE-AAC sets its
 own cutoff and ignores this. The actual frequency is adjusted to a band edge.
 .SH INPUT/OUTPUT OPTIONS

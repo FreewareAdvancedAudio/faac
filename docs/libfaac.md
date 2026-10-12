@@ -457,7 +457,9 @@ with, respectively, a `bit_rate` set or unset is rejected by
 `faac_encoder_info.rate_control` reports the resolved mode.
 
 In ABR and CBR the cutoff follows `bit_rate`; in VBR it is the top of
-that curve, 18750 Hz. A non-zero `bandwidth` overrides either. A non-zero `quant_quality` given
+that curve, 18750 Hz, except that input above 48 kHz at the default quality
+(100) or higher keeps the full band (half the sample rate). A non-zero
+`bandwidth` overrides either. A non-zero `quant_quality` given
 together with a `bit_rate` is not rejected: it is the rate loop's starting
 quality, and the loop moves on from it. `faac_encoder_info.bandwidth`
 reports the cutoff in use.
