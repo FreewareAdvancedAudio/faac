@@ -313,9 +313,13 @@ int faacEncApplyConfig(faacEncStruct* hEncoder,
 
     hEncoder->config.bitRate = config->bitRate;
 
-    /* Only VBR reaches here without a bandwidth: ABR derived its own above. */
+    /* Only VBR reaches here without a bandwidth: ABR derived its own above.
+     * Hi-res VBR at the default quality or higher keeps the full band so that
+     * nothing above the ceiling is discarded; below it the ceiling saves bits.
+     * ABR keeps the ceiling because the extra band costs bits at a fixed rate. */
     if (!config->bandWidth)
-        config->bandWidth = BANDWIDTH_CEILING;
+        config->bandWidth = (hEncoder->sampleRate > 48000 && config->quantqual >= DEFQUAL)
+            ? (unsigned int)(hEncoder->sampleRate / 2) : BANDWIDTH_CEILING;
 
     hEncoder->config.bandWidth = config->bandWidth;
 
@@ -352,6 +356,10 @@ int faacEncApplyConfig(faacEncStruct* hEncoder,
      * the low bands, where the de-emphasis leaves the most audible error. */
     hEncoder->aacquantCfg.treble_slope = (hEncoder->config.bitRate >= TREBLE_SLOPE_BITRATE)
         ? TREBLE_SLOPE_RICH : 1.0f;
+    /* The slope is per line, so it scales with the rate to keep the same
+     * de-emphasis in Hz as 44.1 kHz. */
+    if (hEncoder->sampleRate > 48000)
+        hEncoder->aacquantCfg.treble_slope *= ((float)hEncoder->sampleRate / 44100.0f);
 
     if (hEncoder->config.aacObjectType == HE_V1) {
         SBRContext *sCtx = hEncoder->sbrContext;
