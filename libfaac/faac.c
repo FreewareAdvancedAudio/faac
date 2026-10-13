@@ -283,6 +283,10 @@ FAACAPI faac_status faac_encoder_open(const faac_params *p, faac_encoder **out)
         return (applied < 0) ? FAAC_ERR_NO_MEMORY : FAAC_ERR_INVALID_ARGUMENT;
     }
 
+    /* ASC depends only on the resolved configuration. MPEG-2 has none. */
+    if (cfg->mpegVersion != MPEG2)
+        h->ascLen = (uint32_t)faacEncGetDecoderSpecificInfo((faacEncHandle)h, h->asc);
+
     *out = (faac_encoder *)h;
     return FAAC_OK;
 }
@@ -357,20 +361,14 @@ FAACAPI faac_status faac_encoder_asc(faac_encoder *enc,
         return FAAC_ERR_INVALID_ARGUMENT;
     h = unwrap(enc);
 
-    if (!h->ascCache) {
-        int rc = faacEncGetDecoderSpecificInfo((faacEncHandle)h,
-                                               &h->ascCache, &h->ascCacheLen);
-        if (rc != 0) {
-            h->ascCache = NULL;
-            h->ascCacheLen = 0;
-            /* -2 is "MPEG-2 has no ASC"; everything else is an allocation or
-             * argument failure. */
-            return (rc == -2) ? FAAC_ERR_UNSUPPORTED : FAAC_ERR_NO_MEMORY;
-        }
+    if (h->config.mpegVersion == MPEG2) {
+        *buf = NULL;
+        *len = 0;
+        return FAAC_ERR_UNSUPPORTED;
     }
 
-    *buf = h->ascCache;
-    *len = (uint32_t)h->ascCacheLen;
+    *buf = h->asc;
+    *len = h->ascLen;
     return FAAC_OK;
 }
 
