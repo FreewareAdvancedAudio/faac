@@ -317,6 +317,15 @@ int *mk_chan_map(uint16_t channels, uint16_t center, uint16_t lf)
   if (center_pos < channels)
     map[outpos++] = (int)center_pos;
 
+  /* Five-channel PCM has no LFE to move behind the rear pair. */
+  if (channels == 5)
+  {
+    for (uint16_t inpos = 0; inpos < channels && outpos < channels; inpos++)
+      if (inpos != center_pos)
+        map[outpos++] = (int)inpos;
+    return map;
+  }
+
   uint16_t inpos = 0;
   for (; outpos < (channels - 1) && inpos < channels; inpos++)
   {
