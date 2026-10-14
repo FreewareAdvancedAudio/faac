@@ -92,7 +92,9 @@ FAACAPI faac_status faac_get_library_info(faac_library_info *out)
     info.max_channels   = (uint32_t)MAX_CHANNELS;
     info.version        = vid;
     info.copyright      = vcopy;
+#ifndef FAAC_DISABLE_SBR
     info.sbr_decimation = (uint32_t)FAAC_SBR_DECIMATION;
+#endif
 
     /* Write at most the caller's struct_size so a newer library cannot overrun
      * an older, smaller faac_library_info; report the byte count actually set. */
@@ -149,7 +151,13 @@ static faac_status validate_params(const faac_params *p)
         default: return FAAC_ERR_INVALID_ARGUMENT;
     }
     switch (p->object_type) {
-        case FAAC_OBJ_AUTO: case FAAC_OBJ_LOW: case FAAC_OBJ_HE_AAC_V1:
+        case FAAC_OBJ_HE_AAC_V1:
+#ifdef FAAC_DISABLE_SBR
+            return FAAC_ERR_UNSUPPORTED;
+#else
+            break;
+#endif
+        case FAAC_OBJ_AUTO: case FAAC_OBJ_LOW:
             break;
         case FAAC_OBJ_HE_AAC_V2:
             return FAAC_ERR_UNSUPPORTED;   /* parametric stereo not implemented */
