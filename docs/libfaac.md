@@ -347,9 +347,10 @@ over where encoder memory lives. The allocator need not clear the memory it retu
 ### Memory budget and embedded targets
 
 The encoder instance is heap-allocated at `faac_encoder_open()` and does not
-allocate again while encoding or flushing. The first successful
-`faac_encoder_asc()` call additionally caches 2 bytes for LC, 5 bytes for stereo
-HE-AAC, or 7 bytes for mono HE-AAC. Closing the handle releases all of it.
+allocate again while encoding or flushing. AudioSpecificConfig is built at open
+in an 8-byte array inside the handle: 2 bytes for LC, 5 bytes for multichannel
+HE-AAC, or 7 bytes for mono HE-AAC. `faac_encoder_asc()` returns that storage
+without allocating. Closing the handle releases all of it.
 
 The following are indicative measurements from an arm64 build at 48000 Hz
 with default build options, not storage requirements guaranteed across builds:
@@ -525,8 +526,10 @@ shim — callers must move to `faac_*`. The changes are mechanical:
   removed `name`/`copyright` write-only config fields are gone along
   with it.
 - **Decoder-specific info.** `faacEncGetDecoderSpecificInfo()` is
-  replaced by `faac_encoder_asc()`. The legacy call allocated a caller-freed buffer; the new buffer is
-  library-owned and valid until close. Remove the old `free()` call.
+  replaced by `faac_encoder_asc()`. The legacy call allocated a caller-freed
+  buffer; the new call returns bytes built at open in the handle, without
+  allocating. The buffer is library-owned and valid until close. Remove the
+  old `free()` call.
 - **Encoding loop.** `faacEncEncode()` becomes
   `faac_encoder_encode()` with the byte count returned via an
   out-parameter (`bytes_written`) instead of the return value; the return
