@@ -317,6 +317,15 @@ int *mk_chan_map(uint16_t channels, uint16_t center, uint16_t lf)
   if (center_pos < channels)
     map[outpos++] = (int)center_pos;
 
+  /* Five-channel PCM has no LFE to move behind the rear pair. */
+  if (channels == 5)
+  {
+    for (uint16_t inpos = 0; inpos < channels && outpos < channels; inpos++)
+      if (inpos != center_pos)
+        map[outpos++] = (int)inpos;
+    return map;
+  }
+
   uint16_t inpos = 0;
   for (; outpos < (channels - 1) && inpos < channels; inpos++)
   {
@@ -331,6 +340,18 @@ int *mk_chan_map(uint16_t channels, uint16_t center, uint16_t lf)
       map[outpos] = (int)lf_pos;
     else if (inpos < channels)
       map[outpos] = (int)inpos;
+  }
+
+  /* AAC configuration 7 codes the side pair before the back pair, while WAVE
+     order has back before side. */
+  if (channels == 8)
+  {
+    for (uint16_t i = 3; i < 5; i++)
+    {
+      int tmp = map[i];
+      map[i] = map[i + 2];
+      map[i + 2] = tmp;
+    }
   }
 
   return map;
