@@ -363,23 +363,26 @@ void SbrQmfAnalysis(SBRInfo *sbr, const float * restrict ovl_pos, float * restri
     float x[128], y[128];
     float * restrict xr = x, * restrict xi = x + 64;
     const float * restrict yr = y, * restrict yi = y + 64;
-    const sbrfloat * restrict p0 = qmf_c;
+    /* The filter is symmetric except at offsets 128/512 and 256/384.
+     * Compute the contiguous polyphase outputs before the complex rotation,
+     * using the FFT output buffer as workspace. */
+    for (int n = 0; n < 128; n++) {
+        y[n] = qmf_c[n] * ovl_pos[639 - n]
+             + qmf_c[128 + n] * ovl_pos[511 - n]
+             + qmf_c[256 + n] * ovl_pos[383 - n]
+             + qmf_c[256 - n] * ovl_pos[255 - n]
+             + qmf_c[128 - n] * ovl_pos[127 - n];
+    }
+    /* Tap zero uses the two sign exceptions to the mirror rule. */
+    y[0] = qmf_c[0] * ovl_pos[639]
+         + qmf_c[128] * ovl_pos[511]
+         + qmf_c[256] * ovl_pos[383]
+         + (-qmf_c[256]) * ovl_pos[255]
+         + (-qmf_c[128]) * ovl_pos[127];
     for (int m = 0; m < 64; m++) {
-        int n0 = 2 * m;
-        float a = p0[0]   * ovl_pos[639 - n0]
-                    + p0[128] * ovl_pos[511 - n0]
-                    + p0[256] * ovl_pos[383 - n0]
-                    + p0[384] * ovl_pos[255 - n0]
-                    + p0[512] * ovl_pos[127 - n0];
-        float b = p0[1]   * ovl_pos[638 - n0]
-                    + p0[129] * ovl_pos[510 - n0]
-                    + p0[257] * ovl_pos[382 - n0]
-                    + p0[385] * ovl_pos[254 - n0]
-                    + p0[513] * ovl_pos[126 - n0];
-        /* c[m] = (a + j*b) * exp(-j*pi*m/64) */
+        float a = y[2 * m], b = y[2 * m + 1];
         xr[m] = a * sbr->twidCos[m] - b * sbr->twidSin[m];
         xi[m] = -(a * sbr->twidSin[m] + b * sbr->twidCos[m]);
-        p0 += 2;
     }
     fft(x, y, FFT_LOGM_SHORT);
     for (int k = kx; k < k2; k++) {
@@ -437,15 +440,12 @@ static void sbr_quantize_envelopes(const SBRInfo *sbr, int nch, const bool *isLf
                 float factor = fd->eff_amp_res ? 1.0f : 2.0f;
                 int level = lrintf(factor * (fast_log2(E + SBR_LOG_ENERGY_FLOOR) - SBR_ENV_LEVEL_LOG2_OFFSET));
                 int raw_level = clamp_int(level, 0, 127);
-                if (prevLevel < 0) {
+                /* Clamped so the frequency-delta chain stays codable. */
+                if (prevLevel < 0)
                     raw_level = clamp_int(raw_level, 0, fd->eff_amp_res ? 63 : 127);
-                    fd->ch[ch].envData[e][b] = raw_level;
-                    prevLevel = raw_level;
-                } else {
-                    int delta = clamp_int(raw_level - prevLevel, -dlav, dlav);
-                    fd->ch[ch].envData[e][b] = delta;
-                    prevLevel += delta;
-                }
+                else
+                    raw_level = clamp_int(raw_level, prevLevel - dlav, prevLevel + dlav);
+                fd->ch[ch].envData[e][b] = prevLevel = raw_level;
             }
         }
     }
