@@ -342,6 +342,18 @@ int *mk_chan_map(uint16_t channels, uint16_t center, uint16_t lf)
       map[outpos] = (int)inpos;
   }
 
+  /* AAC configuration 7 codes the side pair before the back pair, while WAVE
+     order has back before side. */
+  if (channels == 8)
+  {
+    for (uint16_t i = 3; i < 5; i++)
+    {
+      int tmp = map[i];
+      map[i] = map[i + 2];
+      map[i + 2] = tmp;
+    }
+  }
+
   return map;
 }
 
