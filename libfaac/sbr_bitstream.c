@@ -217,7 +217,7 @@ int SbrContextGetBits(SBRContext *sCtx, BitStream *bs, const AACElement *elem, i
             int id_aac = (elem->type == ID_CPE) ? ID_CPE : ID_SCE;
             /* One step past the newest slot is the oldest: the payload whose
              * audio this access unit's core carries. See SBR_FRAME_FIFO. */
-            const SbrFrameData *fd = &sCtx->frameFIFO[(sCtx->frameHead + 1) % SBR_FRAME_FIFO];
+            const SbrFrameData *fd = sCtx->frameFIFO[(sCtx->frameHead + 1) % SBR_FRAME_FIFO];
             SBRInfo *sbr = sCtx->sbrInfo;
             if (!sbr->headerDecided) {
                 sbr->sendHeaderThisFrame = (sbr->frameCount++ % SBR_HEADER_PERIOD == 0);

@@ -38,9 +38,10 @@ static const resfloat hb_even[RESAMPLE_FILTER_LEN / 2 + 1] = {
 
 Resampler *ResampleInit(int channels)
 {
-    Resampler *r = (Resampler *)AllocMemory(sizeof(Resampler));
+    size_t size = sizeof(Resampler) + channels * sizeof(float[RESAMPLE_FILTER_LEN]);
+    Resampler *r = (Resampler *)AllocMemory(size);
     if (!r) return NULL;
-    memset(r, 0, sizeof(Resampler));
+    memset(r, 0, size);
     r->channels = channels;
     return r;
 }

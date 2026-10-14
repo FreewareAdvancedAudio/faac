@@ -118,7 +118,7 @@ void SbrAnalyze(SignalAnalysis *sa, float *fullPtrs[], int nch, const bool *isLf
         int kEnd = sbr->k2;
         for (int ch = 0; ch < nch; ch++) {
             if (isLfe[ch]) continue;
-            memset(sa->bandE[ch], 0, sizeof(sa->bandE[ch]));
+            memset(sa->ch[ch].bandE, 0, sizeof(sa->ch[ch].bandE));
 
             memcpy(workspace, sbr->ch[ch].qmfOvl64, SBR_QMF_HIST_LEN * sizeof(float));
             memcpy(workspace + SBR_QMF_HIST_LEN, fullPtrs[ch], numSamples * sizeof(float));
@@ -129,7 +129,7 @@ void SbrAnalyze(SignalAnalysis *sa, float *fullPtrs[], int nch, const bool *isLf
 #endif
                 {
                     int e = sbr_env_of_slot(sa->numEnvelopes, envStart, slot);
-                    SbrQmfAnalysis(sbr, workspace + slot * SBR_QMF_BANDS_64, sa->bandE[ch][e], kx, kEnd);
+                    SbrQmfAnalysis(sbr, workspace + slot * SBR_QMF_BANDS_64, sa->ch[ch].bandE[e], kx, kEnd);
                 }
             }
         }

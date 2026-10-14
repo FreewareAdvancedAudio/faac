@@ -35,6 +35,8 @@ struct SBRInfo;
 typedef struct SignalAnalysisChannel {
     int       transientSlot;
     float transientStrength;
+    /* Each channel owns its envelope energy over the shared grid. */
+    float bandE[SBR_MAX_ENVELOPES][SBR_QMF_BANDS_64];
 } SignalAnalysisChannel;
 
 typedef struct SignalAnalysis {
@@ -47,11 +49,7 @@ typedef struct SignalAnalysis {
 
     /* Block switching needs a decision for every core channel, so pass 1 runs
        full width. */
-    SignalAnalysisChannel ch[MAX_CHANNELS];
-
-    /* Per-envelope QMF band energy, binned over the grid above; only the first
-       numEnvelopes rows are written. */
-    float bandE[MAX_CHANNELS][SBR_MAX_ENVELOPES][SBR_QMF_BANDS_64];
+    SignalAnalysisChannel ch[];
 } SignalAnalysis;
 
 void SbrAnalyze(SignalAnalysis *sa, float *fullPtrs[], int nch, const bool *isLfe, int numSamples, struct SBRInfo *sbr);

@@ -142,9 +142,10 @@ static int build_freq_table(SBRInfo *sbr)
 
 SBRInfo *SbrInit(int channels, int sampleRate, unsigned long bitRate)
 {
-    SBRInfo *sbr = (SBRInfo *)AllocMemory(sizeof(SBRInfo));
+    size_t size = sizeof(SBRInfo) + channels * sizeof(SBRChannel);
+    SBRInfo *sbr = (SBRInfo *)AllocMemory(size);
     if (!sbr) return NULL;
-    memset(sbr, 0, sizeof(SBRInfo));
+    memset(sbr, 0, size);
     sbr->sbrPresent = 1;
     sbr->numChannels = channels;
     sbr->sampleRate = sampleRate;
@@ -198,9 +199,9 @@ void SbrEnd(SBRInfo *sbr)
 
 /* What analysing a silent frame yields. Needed because zeroed memory is not a
  * legal payload: numEnvelopes == 0 encodes no grid at all. */
-static void sbr_frame_silence(SbrFrameData *fd)
+static void sbr_frame_silence(SbrFrameData *fd, int channels)
 {
-    memset(fd, 0, sizeof(*fd));
+    memset(fd, 0, sizeof(*fd) + channels * sizeof(fd->ch[0]));
     fd->numEnvelopes = 1;
     fd->eff_amp_res  = 0;
     fd->frameClass   = SBR_FRAME_CLASS_FIXFIX;
@@ -212,18 +213,24 @@ static void sbr_frame_silence(SbrFrameData *fd)
 
 SBRContext *SbrContextInit(int channels)
 {
-    SBRContext *sbrCtx = (SBRContext *)AllocMemory(sizeof(SBRContext));
+    size_t frameSize = sizeof(SbrFrameData) + channels * sizeof(((SbrFrameData *)0)->ch[0]);
+    SBRContext *sbrCtx = (SBRContext *)AllocMemory(sizeof(SBRContext) + SBR_FRAME_FIFO * frameSize);
     if (sbrCtx) {
         memset(sbrCtx, 0, sizeof(SBRContext));
         sbrCtx->resampler = ResampleInit(channels);
-        if (!sbrCtx->resampler) {
-            FreeMemory(sbrCtx);
+        size_t size = sizeof(SignalAnalysis) + channels * sizeof(SignalAnalysisChannel);
+        sbrCtx->signalAnalysis = AllocMemory(size);
+        if (!sbrCtx->resampler || !sbrCtx->signalAnalysis) {
+            SbrContextEnd(sbrCtx);
             return NULL;
         }
+        memset(sbrCtx->signalAnalysis, 0, size);
         /* The first access units carry the core's silent lead-in, so the ring
          * has to start full of payloads that describe silence. */
-        for (int i = 0; i < SBR_FRAME_FIFO; i++)
-            sbr_frame_silence(&sbrCtx->frameFIFO[i]);
+        for (int i = 0; i < SBR_FRAME_FIFO; i++) {
+            sbrCtx->frameFIFO[i] = (SbrFrameData *)(sbrCtx->frameData + i * frameSize);
+            sbr_frame_silence(sbrCtx->frameFIFO[i], channels);
+        }
     }
     return sbrCtx;
 }
@@ -237,6 +244,7 @@ void SbrContextEnd(SBRContext *sbrCtx)
     if (sbrCtx->resampler) {
         ResampleEnd(sbrCtx->resampler);
     }
+    FreeMemory(sbrCtx->signalAnalysis);
     FreeMemory(sbrCtx);
 }
 
@@ -270,7 +278,7 @@ void SbrContextProcessFrame(SBRContext *sCtx, int numChannels, const bool *isLfe
     /* SbrEncode quantizes into the new head; SbrWrite (via SbrContextGetBits)
      * emits the oldest slot, which is the payload for this frame's core audio. */
     sCtx->frameHead = (sCtx->frameHead + 1) % SBR_FRAME_FIFO;
-    SbrFrameData *fd = &sCtx->frameFIFO[sCtx->frameHead];
+    SbrFrameData *fd = sCtx->frameFIFO[sCtx->frameHead];
     sCtx->sbrInfo->headerDecided = 0;
 
     /* Tick 1 still has real signal in the QMF overlap and the decimation FIR;
@@ -280,9 +288,9 @@ void SbrContextProcessFrame(SBRContext *sCtx, int numChannels, const bool *isLfe
             rs->halfRate[channel] = inputFifo[channel];
             memset(rs->halfRate[channel], 0, FRAME_LEN * sizeof(float));
             heHalfRate[channel] = rs->halfRate[channel];
-            sCtx->signalAnalysis.ch[channel].transientStrength = 0.0f;
+            sCtx->signalAnalysis->ch[channel].transientStrength = 0.0f;
         }
-        sbr_frame_silence(fd);
+        sbr_frame_silence(fd, numChannels);
     } else {
         for (channel = 0; channel < (unsigned int)numChannels; channel++) {
             /* SBR finishes before the FIR overwrites the consumed FIFO front. */
@@ -300,8 +308,8 @@ void SbrContextProcessFrame(SBRContext *sCtx, int numChannels, const bool *isLfe
          * claims SBR_NUM_TIME_SLOTS, so normalising a short frame over fewer slots
          * would inflate its levels, and the QMF-overlap save below reads the last
          * SBR_QMF_OVL_LEN_64 samples -- behind the buffer for a short frame. */
-        SbrAnalyze(&sCtx->signalAnalysis, fullPtrs, numChannels, isLfe, 2 * FRAME_LEN, sCtx->sbrInfo);
-        SbrEncode(sCtx->sbrInfo, fullPtrs, numChannels, isLfe, 2 * FRAME_LEN, &sCtx->signalAnalysis, fd);
+        SbrAnalyze(sCtx->signalAnalysis, fullPtrs, numChannels, isLfe, 2 * FRAME_LEN, sCtx->sbrInfo);
+        SbrEncode(sCtx->sbrInfo, fullPtrs, numChannels, isLfe, 2 * FRAME_LEN, sCtx->signalAnalysis, fd);
         /* Dual-rate decimation: produces the halved-rate core signal. */
         Resample(rs, 2 * FRAME_LEN);
     }
@@ -413,7 +421,7 @@ static void sbr_quantize_envelopes(const SBRInfo *sbr, int nch, const bool *isLf
     for (int ch = 0; ch < nch; ch++) {
         if (isLfe[ch]) continue;
         /* Read-only alias; the quantizer never writes back through it. */
-        const float (* restrict bandE)[SBR_QMF_BANDS_64] = sa->bandE[ch];
+        const float (* restrict bandE)[SBR_QMF_BANDS_64] = sa->ch[ch].bandE;
         int dlav = fd->eff_amp_res ? SBR_ENV_DELTA_LIMIT_HIRES : SBR_ENV_DELTA_LIMIT_LORES;
         for (int e = 0; e < n_env; e++) {
             int prevLevel = -1;
