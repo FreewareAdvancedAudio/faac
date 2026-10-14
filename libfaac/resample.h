@@ -31,10 +31,11 @@ typedef float resfloat;
 #define RESAMPLE_FILTER_LEN 63
 
 typedef struct Resampler {
-    float  buf     [MAX_CHANNELS][RESAMPLE_FILTER_LEN]; /* FIR overlap state (carries between frames) */
     float *fullRate[MAX_CHANNELS];                    /* borrowed input FIFO */
     float *halfRate[MAX_CHANNELS];                    /* aliases the consumed FIFO front */
     int        channels;
+    /* FIR overlap needs storage only for the fixed channel count. */
+    float buf[][RESAMPLE_FILTER_LEN];
 } Resampler;
 
 Resampler *ResampleInit(int channels);

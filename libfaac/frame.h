@@ -111,8 +111,9 @@ typedef struct faacEncStruct {
 
     RateControl rc;
 
-    /* Keep frame controls before the large per-channel coding state. */
-    CoderInfo coderInfo[MAX_CHANNELS];
+    /* Keep frame controls before the large coder state, sized at open to
+       omit unused channels. */
+    CoderInfo coderInfo[];
 } faacEncStruct;
 
 /* One-time configuration worker behind faac_encoder_open(): resolves the

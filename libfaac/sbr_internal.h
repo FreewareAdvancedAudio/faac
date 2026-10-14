@@ -44,7 +44,7 @@ typedef struct SbrFrameData {
     struct {
         /* Absolute levels are 0..127; deltas are -60..60. */
         int8_t envData[SBR_MAX_ENVELOPES][SBR_MAX_BANDS];
-    } ch[MAX_CHANNELS];
+    } ch[];
 } SbrFrameData;
 
 struct SBRInfo {
@@ -78,14 +78,14 @@ struct SBRInfo {
     int headerDecided;
     int sendHeaderThisFrame;
 
-    /* --- per-channel state --- */
-    SBRChannel ch[MAX_CHANNELS];
-
     /* QMF analysis twiddle factors. */
     float twidCos[SBR_QMF_BANDS_64];
     float twidSin[SBR_QMF_BANDS_64];
     float oddCos [SBR_QMF_BANDS_64];
     float oddSin [SBR_QMF_BANDS_64];
+
+    /* QMF history follows the fixed channel count. */
+    SBRChannel ch[];
 };
 
 struct SBRContext {
@@ -95,12 +95,14 @@ struct SBRContext {
     struct Resampler *resampler;
 
     /* Shared signal analysis */
-    SignalAnalysis  signalAnalysis;
+    SignalAnalysis *signalAnalysis;
     /* Coded-payload delay ring; see SBR_FRAME_FIFO. frameHead is the newest
        entry, so its successor (frameHead + 1) % SBR_FRAME_FIFO is the oldest --
        the payload the current access unit emits. */
-    SbrFrameData frameFIFO[SBR_FRAME_FIFO];
+    SbrFrameData *frameFIFO[SBR_FRAME_FIFO];
     int          frameHead;
+    /* Channel-sized payload slots share the context allocation. */
+    unsigned char frameData[];
 };
 
 /* The envelope band table this frame codes over. The quantizer and the writer

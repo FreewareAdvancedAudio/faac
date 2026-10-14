@@ -417,9 +417,10 @@ faacEncHandle faacEncOpen(unsigned long sampleRate,
     *inputSamples = FRAME_LEN*numChannels;
     *maxOutputBytes = ADTS_FRAMESIZE;
 
-    hEncoder = (faacEncStruct*)AllocMemory(sizeof(faacEncStruct));
+    size_t handleSize = sizeof(faacEncStruct) + numChannels * sizeof(CoderInfo);
+    hEncoder = (faacEncStruct*)AllocMemory(handleSize);
     if (!hEncoder) return NULL;
-    memset(hEncoder, 0, sizeof(faacEncStruct));
+    memset(hEncoder, 0, handleSize);
 
     hEncoder->numChannels = numChannels;
     hEncoder->sampleRate = sampleRate;
