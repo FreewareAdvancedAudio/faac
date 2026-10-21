@@ -53,9 +53,6 @@ libfaac_src = [
 
 libfaac = disabler()
 
-# Derives library shared object version directly from project_version in root meson.build
-project_ver = meson.project_version()
-
 common_args = {
     'include_directories' : ['..', '../include', common_inc],
     'c_args' : c_args + ['-DCOMMON_PREFIX=faac_'],
@@ -79,15 +76,14 @@ if default_lib == 'static' or default_lib == 'both' or (get_option('frontend') a
 endif
 
 if default_lib == 'shared' or default_lib == 'both'
+    shared_kwargs = shared_library_args + {
+      'c_args' : common_args['c_args'] + ['-DFAAC_BUILDING'],
+      'vs_module_defs' : 'libfaac.def',
+    }
     libfaac_shared = shared_library(
         'faac',
         libfaac_src,
-        kwargs : common_args + {
-          # Keep in sync with FAAC_VERSION_MAJOR/MINOR/PATCH in include/faac.h.
-          'c_args' : common_args['c_args'] + ['-DFAAC_BUILDING'],
-          'version' : '3.0.0',
-          'vs_module_defs' : 'libfaac.def',
-        },
+        kwargs : common_args + shared_kwargs,
     )
 endif
 
@@ -103,7 +99,7 @@ pkgconfig.generate(
     libfaac,
     name: 'FAAC',
     description: 'Freeware Advanced Audio Coder',
-    version: project_ver,
+    version: meson.project_version(),
     filebase: 'faac'
 )
 

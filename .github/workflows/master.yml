@@ -168,8 +168,10 @@ jobs:
             fi
           done
           meson test --print-errorlogs
-          # Keep the shared library in the package for applications that link to libfaac.
-          compgen -G '../temp/bin/*faac*.dll' > /dev/null
+          # Keep all shared libraries in lib/ for applications that link to them.
+          for dll in faac faad faam; do
+            compgen -G "../temp/lib/*${dll}*.dll" > /dev/null
+          done
 
       - name: Build (General)
         if: matrix.config.shell != 'msys2 {0}' && matrix.config.compiler != 'cl'
@@ -199,7 +201,9 @@ jobs:
           }
           meson test -C build --print-errorlogs
           if ($LASTEXITCODE -ne 0) { throw 'Meson tests failed' }
-          if (-not (Get-ChildItem 'temp/bin/*faac*.dll')) { throw 'FAAC DLL is missing from the package' }
+          foreach ($lib in @('faac', 'faad', 'faam')) {
+            if (-not (Get-ChildItem "temp/lib/*$lib*.dll")) { throw "$lib DLL is missing from the package" }
+          }
 
       - name: Upload artifacts (Windows)
         uses: actions/upload-artifact@v7
