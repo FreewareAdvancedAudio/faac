@@ -83,3 +83,5 @@ pkgconfig.generate(
     version: '3.0.0',
     filebase: 'faad3'
 )
+
+subdir('tests')

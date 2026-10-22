@@ -84,3 +84,5 @@ pkg.generate(
   description: 'Freeware Advanced Audio Muxer',
   version: meson.project_version(),
 )
+
+subdir('tests')

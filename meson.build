@@ -64,6 +64,8 @@ subdir('docs')
 subdir('include')
 subdir('common')
 
+subdir('tests/fuzz')
+
 if get_option('encoder')
     subdir('libfaac')
 endif
@@ -76,3 +78,6 @@ endif
 if get_option('frontend')
     subdir('frontend')
 endif
+
+# On Windows, verify both library variants link without import/export defines.
+subdir('tests')

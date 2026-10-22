@@ -17,3 +17,5 @@ codec_dep = declare_dependency(
         'sfb_tables.c',
     ),
 )
+
+subdir('tests')

@@ -870,13 +870,13 @@ int faacEncEncode(faacEncHandle hpEncoder,
         }
     }
 
-    for (int e = 0; e < hEncoder->numElements; e++) {
-      // reduce LFE bandwidth
-		if (hEncoder->elements[e].type == ID_LFE)
-		{
-                    coderInfo[hEncoder->elements[e].channels[0]].sfbn = 3;
-		}
-	}
+    for (channel = 0; channel < numChannels; channel++) {
+        if (hEncoder->isLfeChannel[channel]) {
+            /* CalcBW only initializes offsets through max_cbl. */
+            int max_cbl = hEncoder->aacquantCfg.max_cbl;
+            coderInfo[channel].sfbn = max_cbl < 3 ? max_cbl : 3;
+        }
+    }
 
     /* Clear each channel's section state before AACstereo pre-loads intensity
      * bands and BlocQuant resolves the rest. */

@@ -27,21 +27,35 @@ jobs:
               shell: bash,
             }
           - {
-              name: Linux GCC (SBR Decimation),
+              name: Linux GCC (max 1 channel),
+              os: ubuntu-latest,
+              compiler: gcc,
+              shell: bash,
+              options: -Dmax-channels=1,
+            }
+          - {
+              name: Linux GCC (max 2 channels),
+              os: ubuntu-latest,
+              compiler: gcc,
+              shell: bash,
+              options: -Dmax-channels=2,
+            }
+          - {
+              name: Linux GCC (SBR decimation 4),
               os: ubuntu-latest,
               compiler: gcc,
               shell: bash,
               options: -Dsbr-decimation=4,
             }
           - {
-              name: Linux GCC (lean muxer),
+              name: Linux GCC (muxer without video or fragmented),
               os: ubuntu-latest,
               compiler: gcc,
               shell: bash,
               options: -Dmuxer-video=false -Dmuxer-fragmented=false,
             }
           - {
-              name: Linux GCC (libfaam only),
+              name: Linux GCC (no encoder),
               os: ubuntu-latest,
               compiler: gcc,
               shell: bash,
@@ -147,7 +161,13 @@ jobs:
               echo "Unexpected FAAC/FAAD/FAAM DLL dependency in $exe" >&2
               exit 1
             fi
+            # A static link must not re-export the libraries' API from the program.
+            if objdump -p "$exe" | grep -E 'fa(ac|ad|am)_[a-z]'; then
+              echo "Unexpected FAAC/FAAD/FAAM export in $exe" >&2
+              exit 1
+            fi
           done
+          meson test --print-errorlogs
           # Keep the shared library in the package for applications that link to libfaac.
           compgen -G '../temp/bin/*faac*.dll' > /dev/null
 
@@ -159,6 +179,10 @@ jobs:
           meson setup build -Dprefix="${{ github.workspace }}/temp" ${{ matrix.config.options }}
           meson install -C build
 
+      - name: Test (General)
+        if: matrix.config.shell != 'msys2 {0}' && matrix.config.compiler != 'cl'
+        run: meson test -C build --print-errorlogs
+
       - name: Build (MSVC)
         if: matrix.config.compiler == 'cl'
         run: |
@@ -169,7 +193,12 @@ jobs:
             $imports = dumpbin /DEPENDENTS "temp/bin/$exe"
             if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $exe imports" }
             if ($imports -match 'fa(ac|ad|am).*\.dll') { throw "$exe imports a FAAC/FAAD/FAAM DLL" }
+            $exports = dumpbin /EXPORTS "temp/bin/$exe"
+            if ($LASTEXITCODE -ne 0) { throw "Cannot inspect $exe exports" }
+            if ($exports -match 'fa(ac|ad|am)_[a-z]') { throw "$exe exports a FAAC/FAAD/FAAM function" }
           }
+          meson test -C build --print-errorlogs
+          if ($LASTEXITCODE -ne 0) { throw 'Meson tests failed' }
           if (-not (Get-ChildItem 'temp/bin/*faac*.dll')) { throw 'FAAC DLL is missing from the package' }
 
       - name: Upload artifacts (Windows)
@@ -179,6 +208,113 @@ jobs:
           name: faac-${{ github.sha }}-${{ matrix.config.name }}
           path: temp/*
 
+  fuzz-build:
+    name: Fuzz harness build
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DISABLE: 1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build clang
+
+      - name: Build fuzz harnesses
+        run: |
+          meson setup build
+          FUZZ_BUILD_ONLY=1 tests/fuzz/run.sh build
+
+      - name: Test
+        run: meson test -C build --print-errorlogs
+
+  sanitize:
+    name: Sanitizers (ASan + UBSan)
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DISABLE: 1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build
+
+      - name: Configure sanitizer build
+        run: meson setup build -Db_sanitize=address,undefined -Db_lto=false -Db_lundef=false
+
+      - name: Test
+        run: meson test -C build --print-errorlogs --timeout-multiplier 4
+
+  coverage:
+    name: C unit test coverage
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_DISABLE: 1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcovr meson ninja-build
+
+      - name: Configure coverage build
+        run: meson setup build-coverage -Db_coverage=true -Db_lto=false
+
+      - name: Build
+        run: meson compile -C build-coverage
+
+      - name: Test
+        run: meson test -C build-coverage --print-errorlogs
+
+      - name: Generate coverage report
+        run: |
+          gcovr --gcov-ignore-parse-errors=negative_hits.warn --root . --txt -o build-coverage/meson-logs/coverage.txt build-coverage
+          gcovr --gcov-ignore-parse-errors=negative_hits.warn --root . --xml-pretty -o build-coverage/meson-logs/coverage.xml build-coverage
+          gcovr --gcov-ignore-parse-errors=negative_hits.warn --root . --json-summary-pretty -o build-coverage/meson-logs/coverage-summary.json build-coverage
+
+      - name: Add coverage summary to Actions run
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          report = json.loads(Path("build-coverage/meson-logs/coverage-summary.json").read_text())
+          rows = []
+          for label, key in (("Lines", "line"), ("Branches", "branch"), ("Functions", "function")):
+              rows.append(
+                  f"| {label} | {report[f'{key}_covered']} | {report[f'{key}_total']} | {report[f'{key}_percent']:.1f}% |"
+              )
+
+          summary = "\n".join([
+              "## C unit test coverage",
+              "",
+              "| Metric | Covered | Total | Coverage |",
+              "| --- | ---: | ---: | ---: |",
+              *rows,
+              "",
+              "Full text, XML, and JSON reports are available in the `c-unit-test-coverage` artifact.",
+              "",
+          ])
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(summary)
+          PY
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: c-unit-test-coverage
+          path: |
+            build-coverage/meson-logs/coverage.txt
+            build-coverage/meson-logs/coverage.xml
+            build-coverage/meson-logs/coverage-summary.json
+
   cppcheck:
     name: Cppcheck
     runs-on: ubuntu-latest
@@ -187,7 +323,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install cppcheck
+          sudo apt-get install -y cppcheck meson ninja-build
 
       - uses: actions/checkout@v7
 
@@ -197,9 +333,18 @@ jobs:
           cppcheck --version
           cppcheck --error-exitcode=1 -j4 -q --check-level=exhaustive -Iinclude/ libfaac/ frontend/
 
+      - name: Configure tests
+        run: meson setup build
+
+      - name: Build
+        run: meson compile -C build
+
+      - name: Test
+        run: meson test -C build --print-errorlogs
+
   big-endian:
     name: Linux GCC (Big-endian)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - uses: actions/checkout@v7
@@ -231,7 +376,10 @@ jobs:
       - name: Build native reference
         run: |
           meson setup build-native -Ddefault_library=static
-          ninja -C build-native
+          meson compile -C build-native
+
+      - name: Test native reference
+        run: meson test -C build-native --print-errorlogs
 
       - name: Build s390x (big-endian)
         run: |
@@ -240,6 +388,7 @@ jobs:
           c = 's390x-linux-gnu-gcc'
           ar = 's390x-linux-gnu-ar'
           strip = 's390x-linux-gnu-strip'
+          exe_wrapper = ['qemu-s390x']
 
           [host_machine]
           system = 'linux'
@@ -252,7 +401,10 @@ jobs:
           EOF
           meson setup build-s390x --cross-file s390x.txt -Ddefault_library=static -Dc_link_args=-static
           grep WORDS_BIGENDIAN build-s390x/config.h
-          ninja -C build-s390x
+          meson compile -C build-s390x
+
+      - name: Test s390x (big-endian)
+        run: meson test -C build-s390x --print-errorlogs
 
       - name: Encode natively and under qemu, compare
         run: |

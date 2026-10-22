@@ -675,6 +675,7 @@ int main(int argc, char **argv)
 
     const char *infile = NULL;
     const char *outfile = NULL;
+    char *allocated_outfile = NULL;
     const char *adts_outfile = NULL;
     bool write_stdout = false;
     bool raw_format = false;
@@ -877,7 +878,9 @@ int main(int argc, char **argv)
     if (memory_input) container = is_mp4 = mp4_read_track_buf(inbuf, file_len, want_track, &track);
     if (container) {
         if (!memory_input) {
-            if (!cli_fsize(fin, &file_len)) {
+            /* Pipes report zero size on some Windows runtimes. MP4 demuxing
+             * needs seeking, so always spool stdin first. */
+            if (fin == stdin || !cli_fsize(fin, &file_len)) {
                 FILE *spool = tmpfile();
                 if (!spool) { ret_status = 1; goto cleanup; }
                 bool ok = fwrite(inbuf, 1, input_fill, spool) == input_fill;
@@ -1001,16 +1004,14 @@ int main(int argc, char **argv)
 
     if (!info_only) {
         if (!write_stdout && !outfile) {
-            char *out_path = (char *)malloc(strlen(infile) + 8);
-            strcpy(out_path, infile);
-            char *base = out_path;
-            for (char *c = out_path; *c; c++) {
-                if (*c == '/' || *c == '\\') base = c + 1;
+            char *out_path = cli_default_output_path(infile, raw_format ? ".raw" : ".wav");
+            if (!out_path) {
+                fprintf(stderr, "Out of memory\n");
+                ret_status = 1;
+                goto cleanup;
             }
-            char *dot = strrchr(base, '.');
-            if (dot && dot != base) strcpy(dot, raw_format ? ".raw" : ".wav");
-            else strcat(out_path, raw_format ? ".raw" : ".wav");
             outfile = out_path;
+            allocated_outfile = out_path;
         }
         if (!write_stdout && cli_same_file(infile, outfile)) {
             fprintf(stderr, "Input and output must be different files\n");
@@ -1276,6 +1277,7 @@ cleanup:
     pcm_writer_close(&writer);
     if (dec) faad_decoder_close(&dec);
     if (inbuf) free(inbuf);
+    free(allocated_outfile);
     if (is_mp4) mp4_free_track(&track);
 
 #ifdef _WIN32

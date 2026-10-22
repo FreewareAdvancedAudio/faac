@@ -388,6 +388,28 @@ FILE *cli_fopen(const char *path, const char *mode) {
 #endif
 }
 
+char *cli_default_output_path(const char *input_path, const char *extension)
+{
+    if (!input_path || !extension || extension[0] != '.') return NULL;
+
+    size_t input_len = strlen(input_path);
+    size_t extension_len = strlen(extension);
+    const char *base = input_path;
+    for (const char *p = input_path; *p; p++)
+        if (*p == '/' || *p == '\\') base = p + 1;
+
+    const char *dot = strrchr(base, '.');
+    if (dot == base) dot = NULL;
+    size_t stem_len = dot ? (size_t)(dot - input_path) : input_len;
+    if (stem_len > SIZE_MAX - extension_len - 1) return NULL;
+
+    char *output = (char *)malloc(stem_len + extension_len + 1);
+    if (!output) return NULL;
+    memcpy(output, input_path, stem_len);
+    memcpy(output + stem_len, extension, extension_len + 1);
+    return output;
+}
+
 FILE *cli_open_seekable_input(const char *path)
 {
     if (strcmp(path, "-") != 0)
@@ -433,15 +455,4 @@ bool cli_finish_output(FILE **stream)
     bool ok = !ferror(f);
     int result = (f == stdout || f == stderr) ? fflush(f) : fclose(f);
     return result == 0 && ok;
-}
-
-bool cli_parse_uint(const char *text, unsigned long long max, unsigned long long *out)
-{
-    char *end;
-    if (!text || *text < '0' || *text > '9') return false;
-    errno = 0;
-    unsigned long long value = strtoull(text, &end, 10);
-    if (errno || *end || value > max) return false;
-    *out = value;
-    return true;
 }

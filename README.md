@@ -49,6 +49,7 @@ Lesser General Public License for more details.
    ```bash
    meson setup build
    ninja -C build
+   meson test -C build --print-errorlogs
    meson install -C build
    ```
 
