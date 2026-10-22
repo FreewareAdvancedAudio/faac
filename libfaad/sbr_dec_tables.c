@@ -1,5 +1,5 @@
 /*
- * FAAC - Freeware Advanced Audio Coder
+ * FAAD - Freeware Advanced Audio Decoder
  * SBR tables reproduced from ISO/IEC 14496-3:2005 (non-copyrightable facts)
  *
  * This library is free software; you can redistribute it and/or

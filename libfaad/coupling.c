@@ -1,5 +1,20 @@
+/*
+ * FAAD - Freeware Advanced Audio Decoder
+ * Copyright (C) 2026 Nils Schimmelmann
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ */
+
 /* AAC coupling channel syntax and reconstruction (ISO/IEC 14496-3,
- * Tables 4.8, 4.153 and 4.154). SPDX-License-Identifier: LGPL-2.1-or-later */
+ * Tables 4.8, 4.153 and 4.154). */
 #include "faad_internal.h"
 
 faad_status decode_cce(BitReader *bs, struct faad_decoder *dec)
