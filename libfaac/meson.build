@@ -106,3 +106,5 @@ pkgconfig.generate(
     version: project_ver,
     filebase: 'faac'
 )
+
+subdir('tests')

@@ -98,3 +98,5 @@ if get_option('muxer')
         install: true
     )
 endif
+
+subdir('tests')
