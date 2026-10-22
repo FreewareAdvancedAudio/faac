@@ -23,6 +23,7 @@
 #include <time.h>
 
 #include "faam.h"
+#include "cli_parse.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -61,15 +62,17 @@ int win32_mtime_utf8(const char *utf8_path, time_t *mtime);
    still check the returned NULL and report the error themselves. */
 FILE *cli_fopen(const char *path, const char *mode);
 
+/* Build a default output path by replacing the input basename's extension,
+   or appending the requested extension when none is present. The caller owns
+   the returned allocation. */
+char *cli_default_output_path(const char *input_path, const char *extension);
+
 /* Select binary mode for a standard stream on Windows; a no-op elsewhere. */
 bool cli_binary_stream(FILE *stream);
 
 /* Finish output, closing owned files and only flushing stdout/stderr.
    Clears *stream even on failure; reports buffered and final write errors. */
 bool cli_finish_output(FILE **stream);
-
-/* Decimal digits only, with an inclusive upper bound. */
-bool cli_parse_uint(const char *text, unsigned long long max, unsigned long long *out);
 
 /* Open a seekable input. The path "-" reads stdin into a temporary file. */
 FILE *cli_open_seekable_input(const char *path);

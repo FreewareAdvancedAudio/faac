@@ -337,24 +337,6 @@ enum {
 #define FAAM_MUX_MAX_TRACKS 8 /* matches faam_muxer_config.tracks[8] in include/faam.h */
 #define FAAM_VIDEO_TIMESCALE 90000
 
-/* "n" or "n/d" frames per second. */
-static bool parse_fps(const char *s, uint32_t *num, uint32_t *den)
-{
-    char buf[64];
-    char *slash;
-    unsigned long long n, d = 1;
-
-    if (strlen(s) >= sizeof(buf)) return false;
-    strcpy(buf, s);
-    slash = strchr(buf, '/');
-    if (slash) *slash++ = '\0';
-    if (!cli_parse_uint(buf, 1000000, &n) || n == 0) return false;
-    if (slash && (!cli_parse_uint(slash, 1000000, &d) || d == 0)) return false;
-    *num = (uint32_t)n;
-    *den = (uint32_t)d;
-    return true;
-}
-
 static const char *bad_value(char *buf, size_t size, const char *opt, const char *val, const char *want)
 {
     snprintf(buf, size, "Error: invalid %s value \"%s\" (%s)\n", opt, val, want);
@@ -1183,7 +1165,7 @@ static int cmd_mux(int argc, char **argv)
             else rotation = (uint32_t)v;
             break;
         case OPT_FPS:
-            if (!parse_fps(optarg, &fps_num, &fps_den)) fail = bad_value(errbuf, sizeof(errbuf), "--fps", optarg, "n or n/d, up to 1000000");
+            if (!cli_parse_fps(optarg, &fps_num, &fps_den)) fail = bad_value(errbuf, sizeof(errbuf), "--fps", optarg, "n or n/d, up to 1000000");
             break;
         case OPT_ENCODER_DELAY:
             if (!cli_parse_uint(optarg, UINT32_MAX, &v)) fail = bad_value(errbuf, sizeof(errbuf), "--encoder-delay", optarg, "a sample count");
@@ -1932,40 +1914,6 @@ done:
 /* Chapter file format: one chapter per line, "HH:MM:SS.mmm<TAB>Title". No
  * duration field -- Nero's chpl atom (chapter.c) doesn't store one
  * either; a chapter's extent is implicitly "until the next chapter starts". */
-static bool parse_chapter_line(const char *line, faam_chapter *out, char *title)
-{
-    unsigned hh, mm, ss_i;
-    int consumed = 0;
-    if (sscanf(line, "%u:%u:%u%n", &hh, &mm, &ss_i, &consumed) != 3) return false;
-    if (mm > 59 || ss_i > 59) return false;
-
-    /* The fraction is a decimal fraction of a second, one to three digits: ".5" is 500 ms. */
-    const char *rest = line + consumed;
-    if (*rest != '.') return false;
-    rest++;
-    unsigned ms = 0, digits = 0;
-    while (rest[digits] >= '0' && rest[digits] <= '9') {
-        if (digits == 3) return false;
-        ms = ms * 10 + (unsigned)(rest[digits] - '0');
-        digits++;
-    }
-    if (digits == 0) return false;
-    for (unsigned i = digits; i < 3; i++) ms *= 10;
-    rest += digits;
-
-    if (*rest != '\t') return false;
-    rest++;
-
-    size_t len = strlen(rest);
-    while (len > 0 && (rest[len - 1] == '\n' || rest[len - 1] == '\r')) len--;
-    if (len >= FAAM_CLI_TITLE_MAX) len = FAAM_CLI_TITLE_MAX - 1;
-    memcpy(title, rest, len);
-    title[len] = '\0';
-    out->start_ms = ((uint64_t)hh * 3600 + (uint64_t)mm * 60 + ss_i) * 1000 + ms;
-    out->title = title;
-    return true;
-}
-
 static int cmd_chapter_import(const char *filepath, const char *chapters_path)
 {
     FILE *cf = strcmp(chapters_path, "-") == 0 ? stdin : cli_fopen(chapters_path, "r");
@@ -1990,12 +1938,14 @@ static int cmd_chapter_import(const char *filepath, const char *chapters_path)
             bad = true;
             break;
         }
-        if (!parse_chapter_line(line, &chapters[count], titles[count])) {
+        if (!cli_parse_chapter_line(line, &chapters[count].start_ms,
+                                    titles[count], sizeof(titles[count]))) {
             fprintf(stderr, "%s:%d: malformed chapter line (expected HH:MM:SS.mmm<TAB>Title)\n", chapters_path, lineno);
             bad = true;
             break;
         }
         chapters[count].struct_size = sizeof(chapters[count]);
+        chapters[count].title = titles[count];
         count++;
     }
     if (cf != stdin) fclose(cf);

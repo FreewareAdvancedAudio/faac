@@ -22,8 +22,8 @@ libshell32 = cc.find_library('shell32', required: target_machine.system() == 'wi
 libfaam_for_frontend = get_option('frontend-static') ? libfaam_static : libfaam_lib
 
 frontend_common = static_library('frontend_common',
-    ['input.c', 'cli_io.c', 'charset.c', 'help.c',
-     'input.h', 'cli_io.h', 'charset.h', 'help.h', git_version_h],
+    ['input.c', 'cli_io.c', 'cli_parse.c', 'charset.c', 'help.c',
+     'input.h', 'cli_io.h', 'cli_parse.h', 'charset.h', 'help.h', git_version_h],
     include_directories: ['..', '../include', '../common'],
     c_args: c_args_list,
     dependencies: [libiconv],
