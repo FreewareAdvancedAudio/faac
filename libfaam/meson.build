@@ -50,16 +50,15 @@ libfaam_static = static_library(
 )
 
 if default_lib == 'shared' or default_lib == 'both'
+  shared_kwargs = shared_library_args + {
+    'c_args': libfaam_args['c_args'] + ['-DFAAM_BUILDING'],
+    'vs_module_defs': 'libfaam.def',
+    'install': true,
+  }
   libfaam_shared = shared_library(
     'faam',
     libfaam_sources,
-    kwargs: libfaam_args + {
-      'c_args': libfaam_args['c_args'] + ['-DFAAM_BUILDING'],
-      # Same version as libfaac until the libraries are versioned together.
-      'version': '3.0.0',
-      'vs_module_defs': 'libfaam.def',
-      'install': true,
-    },
+    kwargs: libfaam_args + shared_kwargs,
   )
 endif
 

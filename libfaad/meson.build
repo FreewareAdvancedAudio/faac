@@ -35,8 +35,6 @@ if not get_option('decoder-dab')
     faad_c_args += ['-DFAAD_DISABLE_DAB']
 endif
 
-project_ver = meson.project_version()
-
 common_args = {
     'include_directories' : ['..', '../include', common_inc],
     'c_args' : faad_c_args,
@@ -58,14 +56,13 @@ if default_lib == 'static' or default_lib == 'both' or (get_option('frontend') a
 endif
 
 if default_lib == 'shared' or default_lib == 'both'
+    shared_kwargs = shared_library_args + {
+      'c_args' : common_args['c_args'] + ['-DFAAD_BUILDING'],
+    }
     libfaad_shared = shared_library(
         'faad3',
         faad_src,
-        kwargs : common_args + {
-          'c_args' : common_args['c_args'] + ['-DFAAD_BUILDING'],
-          'version' : '3.0.0',
-          'soversion' : '3',
-        },
+        kwargs : common_args + shared_kwargs,
     )
 endif
 
@@ -80,7 +77,7 @@ pkgconfig.generate(
     libfaad,
     name: 'FAAD',
     description: 'Freeware Advanced Audio Decoder',
-    version: '3.0.0',
+    version: meson.project_version(),
     filebase: 'faad3'
 )
 

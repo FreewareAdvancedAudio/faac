@@ -8,6 +8,23 @@ project('faac', 'c',
         'b_lto=true'
     ])
 
+# Shared-library ABI version, separate from the project release version. This
+# is the single source for the SONAMEs, and Meson checks that the public
+# version macros in the installed headers match it.
+library_abi_version = '3.0.0'
+shared_library_args = {
+    'version': library_abi_version,
+    'soversion': library_abi_version.split('.')[0],
+}
+
+# Windows otherwise installs shared-library DLLs in bindir. Static frontends
+# do not need those DLLs at runtime, so keep them with the other libraries.
+if get_option('frontend') and get_option('frontend-static')
+    shared_library_args += {
+        'install_dir': get_option('libdir'),
+    }
+endif
+
 cc = meson.get_compiler('c')
 if cc.get_argument_syntax() == 'msvc'
     # _s variants buy nothing here and aren't portable; suppress instead.
