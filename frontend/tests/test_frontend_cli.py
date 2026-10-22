@@ -255,6 +255,12 @@ def test_abi_track_count(t, d):
 
 
 def run_all(t, d):
+    for name, exe in (("faac", t.faac), ("faad", t.faad), ("faam", t.faam)):
+        for flag in ("-h", "-H"):
+            r = t.run(exe, [flag], d)
+            check(r.returncode == 0 and r.stdout,
+                  f"{name} {flag} prints help and exits successfully")
+
     test_gapless_boxes(t, d)
     wav = os.path.join(d, "s.wav")
     make_wav(wav)
@@ -831,6 +837,11 @@ def run_demux_header(t, d):
         check(r.returncode == 0, f"{tag}: mux")
         r = t.faam_run(["demux", base + ".m4a", "-o", base + ".aac"], d)
         check(r.returncode == 0, f"{tag}: demux to ADTS")
+        if tag == "lc.aac/none":
+            r2 = t.faam_run(["demux", base + ".m4a", "-o", base + "_v2.aac", "-v2"], d)
+            check(r2.returncode == 0 and b"Demux Summary" in r2.stderr, "demux -v2 prints a summary")
+            r2 = t.faam_run(["demux", base + ".m4a", "-o", base + "_v1.aac", "-v1"], d)
+            check(r2.returncode == 0 and b"Demux Summary" not in r2.stderr, "demux -v1 prints no summary")
         if r.returncode != 0:
             continue
         a, b = adts_frames(os.path.join(d, src)), adts_frames(os.path.join(d, base + ".aac"))
