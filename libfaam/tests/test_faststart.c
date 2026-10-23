@@ -65,7 +65,7 @@ static bool mem_seek(void *user, uint64_t pos) { ((memfile *)user)->pos = (size_
 static uint64_t mem_tell(void *user) { return ((memfile *)user)->pos; }
 
 static faam_io mem_io(memfile *f, bool with_read) {
-    faam_io io = { sizeof(faam_io), f, with_read ? mem_read : NULL, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = f, .read = with_read ? mem_read : NULL, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     return io;
 }
 
@@ -131,10 +131,15 @@ static void snap(memfile *f, snapshot *s) {
         CHECK(faam_demuxer_get_codec_data(d, s->info[i].track_id, s->codec[i], sizeof(s->codec[i]),
                                           &s->codec_len[i]) == FAAM_OK);
     }
-    faam_metadata meta = { .struct_size = sizeof(meta) };
-    if (faam_demuxer_get_metadata(d, &meta) == FAAM_OK) {
-        if (meta.title) snprintf(s->title, sizeof(s->title), "%s", meta.title);
-        if (meta.artist) snprintf(s->artist, sizeof(s->artist), "%s", meta.artist);
+    uint32_t meta_count = 0;
+    if (faam_demuxer_get_num_metadata(d, &meta_count) == FAAM_OK) {
+        for (uint32_t i = 0; i < meta_count; i++) {
+            faam_metadata_entry entry = { .struct_size = sizeof(entry) };
+            if (faam_demuxer_get_metadata_entry(d, i, &entry) != FAAM_OK ||
+                entry.data_type != FAAM_METADATA_UTF8 || memchr(entry.data, 0, entry.data_bytes)) continue;
+            if (entry.key == FAAM_METADATA_KEY_TITLE) snprintf(s->title, sizeof(s->title), "%.*s", (int)entry.data_bytes, (const char *)entry.data);
+            if (entry.key == FAAM_METADATA_KEY_ARTIST) snprintf(s->artist, sizeof(s->artist), "%.*s", (int)entry.data_bytes, (const char *)entry.data);
+        }
     }
     CHECK(faam_demuxer_get_num_chapters(d, &s->num_chapters) == FAAM_OK && s->num_chapters <= 4);
     for (uint32_t i = 0; i < s->num_chapters; i++) {
@@ -223,8 +228,14 @@ static faam_status mux(memfile *out, bool faststart, bool video, bool finalize_o
     cfg.tracks = tracks;
     cfg.flags = faststart ? FAAM_MUXER_FASTSTART : 0;
     cfg.creation_time = 3000000000u;
-    faam_metadata meta = { .struct_size = sizeof(meta), .title = "Faststart", .artist = "Test" };
-    cfg.metadata = &meta;
+    faam_metadata_entry entries[] = {
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_TITLE,
+          .data_type = FAAM_METADATA_UTF8, .data = "Faststart", .data_bytes = sizeof("Faststart") - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_ARTIST,
+          .data_type = FAAM_METADATA_UTF8, .data = "Test", .data_bytes = sizeof("Test") - 1 },
+    };
+
+    cfg.metadata = entries; cfg.num_metadata = 2;
     faam_chapter chapters[2] = {
         { .struct_size = sizeof(faam_chapter), .start_ms = 0, .title = "One" },
         { .struct_size = sizeof(faam_chapter), .start_ms = 1500, .title = "Two" },
@@ -289,18 +300,24 @@ static void check_update(void) {
     snapshot before, after;
     snap(&fast, &before);
 
-    faam_metadata meta = { .struct_size = sizeof(meta),
-        .title = "A considerably longer replacement title than the original one, so moov must grow",
-        .artist = "Other" };
+    static const char replacement[] = "A considerably longer replacement title than the original one, so moov must grow";
+    static const char other[] = "Other";
+    faam_metadata_entry entries[] = {
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_TITLE,
+          .data_type = FAAM_METADATA_UTF8, .data = replacement, .data_bytes = sizeof(replacement) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_ARTIST,
+          .data_type = FAAM_METADATA_UTF8, .data = other, .data_bytes = sizeof(other) - 1 },
+    };
+
     fast.pos = 0;
     faam_io io = mem_io(&fast, true);
-    CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_OK);
+    CHECK(faam_update_metadata_stream(&io, entries, 2, 0) == FAAM_OK);
     faam_chapter ch = { .struct_size = sizeof(ch), .start_ms = 0, .title = "Only" };
     fast.pos = 0;
     CHECK(faam_update_chapters_stream(&io, &ch, 1, 0) == FAAM_OK);
 
     snap(&fast, &after);
-    CHECK(!strcmp(after.title, "A considerably longer replacement title than the original one, so moov must grow"));
+    CHECK(!strcmp(after.title, replacement));
     CHECK(!strcmp(after.artist, "Other"));
     CHECK(after.num_chapters == 1 && !strcmp(after.chapter_title[0], "Only"));
     CHECK(after.num_frames == before.num_frames);
@@ -328,11 +345,11 @@ static void check_errors(void) {
     /* Unknown flag bits are refused; so is faststart on a fragmented file. */
     cfg.flags = 0x8;
     faam_io io = mem_io(&out, true);
-    CHECK(faam_muxer_open(&cfg, &io, &m) == FAAM_ERR_INVALID_ARG && m == NULL);
+    CHECK(faam_muxer_open(&cfg, &io, &m) == FAAM_ERR_INVALID_ARGUMENT && m == NULL);
     cfg.flags = FAAM_MUXER_FASTSTART;
     cfg.fragment_ms = 1000;
     CHECK(faam_muxer_open(&cfg, &io, &m) ==
-          (have_feature(FAAM_FEATURE_FRAGMENTED) ? FAAM_ERR_INVALID_ARG : FAAM_ERR_NOT_BUILT) && m == NULL);
+          (have_feature(FAAM_FEATURE_FRAGMENTED) ? FAAM_ERR_INVALID_ARGUMENT : FAAM_ERR_NOT_BUILT) && m == NULL);
     free(out.buf);
 
     /* A write that fails inside the copy and inside the final moov is sticky. */

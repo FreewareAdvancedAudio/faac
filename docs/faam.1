@@ -345,7 +345,7 @@ rewrites the tags of
 .I file
 in place.
 Existing tags are kept unless removed, so only the given fields change;
-tags libfaam does not model (such as grouping or description) and extra cover art images are preserved byte-for-byte in original relative order.
+All untouched metadata atoms, including unknown tags and every cover image, are preserved byte-for-byte in original relative order.
 Files using QuickTime keys metadata (mdta handler) are refused without modification.
 A file that cannot be read as an MP4 is refused and left untouched.
 The edit is not crash-safe: work on a copy of a file that matters.
@@ -365,9 +365,26 @@ Set the sort name of the field.
 .BR \-\-year ,\  \-\-comment\ <\fItext\fP>
 Set the field.
 .TP
+.BR \-\-lyrics\ <\fItext\fP> ,\  \-\-lyrics\-file\ <\fIfile\fP>
+Set plain embedded lyrics in the standard \(colyr atom.
+File input must be UTF-8, with an optional UTF-8 BOM, and contain no NUL bytes.
+Line breaks and surrounding whitespace are preserved.
+An empty file writes empty lyrics; use --remove lyrics to delete the tag.
+Repeated lyrics options use the last value. No timing synchronization is implied.
+.TP
+.BR \-\-grouping ,\  \-\-copyright ,\  \-\-description ,\  \-\-long\-description ,\  \-\-work ,\  \-\-movement\ <\fItext\fP>
+Set the corresponding native text atom.
+.TP
+.BR \-\-bpm ,\  \-\-movement\-number ,\  \-\-movement\-total\ <\fInumber\fP>
+Set a two-byte integer from 0 to 65535.
+.TP
+.BR \-\-show\-work\-movement
+Enable display of classical work and movement names.
+.TP
 .BR \-\-genre\ <\fIvalue\fP>
-An ID3v1 genre number (0 to 255) or name sets both the numeric and the text
-genre.
+An ID3v1 genre number (0 to 191) or name is stored as the text genre, and a
+numeric genre already in the file is removed. Names ignore case, spacing and
+punctuation, so \fBhip hop\fR finds Hip-Hop; any other value is stored as typed.
 Anything else is stored as free text without the numeric atom.
 .TP
 .BR \-\-compilation
@@ -392,7 +409,9 @@ Repeat for more.
 Remove a field before the other options apply.
 The fields are title, titlesort, artist, artistsort, album, albumsort,
 albumartist, albumartistsort, composer, composersort, year, comment, genre,
-compilation, track, disc, cover-art and custom (all custom tags).
+compilation, track, disc, cover-art, lyrics, grouping, copyright, description,
+long-description, work, movement, bpm, movement-number, movement-total,
+show-work-movement, encoder, genre-code and custom (all freeform tags except iTunSMPB).
 Repeatable, up to 32 times.
 An unknown field is an error.
 .TP
@@ -488,6 +507,10 @@ Extract the audio as an ADTS stream:
 Set tags and cover art:
 .IP
 .B faam tag song.m4a --title "Song" --artist "Artist" --track 3/12 --cover-art cover.jpg
+.PP
+Add lyrics from a UTF-8 file:
+.PP
+.B faam tag song.m4a --lyrics-file lyrics.txt
 .PP
 Replace all tags:
 .IP

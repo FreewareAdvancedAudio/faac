@@ -56,7 +56,7 @@ static uint64_t mem_tell(void *user_data)
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 {
     mem_stream ms = { data, size, 0 };
-    faam_io io = { sizeof(faam_io), &ms, mem_read, NULL, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &ms, .read = mem_read, .write = NULL, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
 
     faam_demuxer *d = NULL;
     if (faam_demuxer_open(NULL, &io, &d) != FAAM_OK || !d) {
@@ -72,8 +72,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     faam_gapless_info gapless; gapless.struct_size = sizeof(gapless);
     (void)faam_demuxer_get_track_gapless(d, 0, &gapless);
 
-    faam_metadata meta = { .struct_size = sizeof(meta) };
-    (void)faam_demuxer_get_metadata(d, &meta);
+    uint32_t meta_count = 0;
+    (void)faam_demuxer_get_num_metadata(d, &meta_count);
 
     faam_chapter chapters[16];
 
@@ -84,9 +84,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
             (void)faam_demuxer_get_chapter(d, i, &chapters[i]);
     }
 
-    for (uint32_t i = 0; i < meta.num_custom_tags; i++) {
-        faam_custom_tag tag = { .struct_size = sizeof(tag) };
-        (void)faam_demuxer_get_custom_tag(d, i, &tag);
+    for (uint32_t i = 0; i < meta_count; i++) {
+        faam_metadata_entry entry = { .struct_size = sizeof(entry) };
+        (void)faam_demuxer_get_metadata_entry(d, i, &entry);
     }
 
     for (uint32_t i = 0; i < num_tracks && i < 8; i++) {

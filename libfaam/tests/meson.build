@@ -34,7 +34,7 @@ test_faam_abi = executable('test_faam_abi', 'test_faam_abi.c',
   include_directories: [libfaam_inc, '..'],
   link_with: libfaam_static,
   c_args: faam_args + ['-DFAAM_STATIC'])
-foreach abi_case : ['outputs', 'future_inputs', 'track_limits_ids', 'odd_and_many', 'metadata', 'updates_close_flags', 'video']
+foreach abi_case : ['outputs', 'future_inputs', 'track_limits_ids', 'odd_and_many', 'updates_close_flags', 'video']
   test('test_unit_faam_abi_' + abi_case, test_faam_abi, args: [abi_case])
 endforeach
 
@@ -45,6 +45,13 @@ if cc.has_argument('-fshort-enums')
     c_args: faam_args + ['-DFAAM_STATIC', '-fshort-enums'])
   test('test_unit_faam_abi_short_enums', test_faam_abi_short)
 endif
+
+test_faam_metadata = executable('test_faam_metadata', 'test_faam_metadata.c',
+  include_directories: [libfaam_inc, '..'],
+  link_with: libfaam_static,
+  c_args: faam_args + ['-DFAAM_STATIC'])
+test('test_unit_faam_metadata', test_faam_metadata)
+
 # Links the library sources directly so the allocator hook counts every allocation.
 faam_alloc_sanitized = get_option('b_sanitize') != 'none'
 if not faam_alloc_sanitized

@@ -148,7 +148,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     ms.size = 0;
     ms.pos = 0;
 
-    faam_io io = { sizeof(faam_io), &ms, rw_read, rw_write, rw_seek, rw_tell, rw_flush };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &ms, .read = rw_read, .write = rw_write, .seek = rw_seek, .tell = rw_tell, .flush = rw_flush };
 
     faam_muxer *m = NULL;
     if (faam_muxer_open(&cfg, &io, &m) == FAAM_OK && m) {

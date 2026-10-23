@@ -412,7 +412,6 @@ static bool finalize_mp4(faac_encoder *hEncoder, const encode_options_t *opts, u
     if (metadata.track) mp4_set_track(metadata.track, metadata.ntracks);
     if (metadata.disc) mp4_set_disc(metadata.disc, metadata.ndiscs);
     if (metadata.compilation) mp4_set_compilation(metadata.compilation);
-    if (metadata.genre_id) mp4_set_genre(metadata.genre_id);
 
     for (uint32_t i = 0; i < opts->custom_tag_count; i++)
     {

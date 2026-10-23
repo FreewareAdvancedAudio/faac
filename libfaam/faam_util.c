@@ -22,7 +22,7 @@
 FAAMAPI faam_status faam_get_library_info(faam_library_info *out)
 {
     if (!out || out->struct_size < FAAM_LIBRARY_INFO_BASELINE)
-        return FAAM_ERR_INVALID_ARG;
+        return FAAM_ERR_INVALID_ARGUMENT;
 
     faam_library_info info;
     memset(&info, 0, sizeof(info));
@@ -59,26 +59,26 @@ const char *faam_strerror(faam_status status)
     switch (status) {
     case FAAM_OK:
         return "Success";
-    case FAAM_ERR_INVALID_ARG:
+    case FAAM_ERR_INVALID_ARGUMENT:
         return "Invalid argument or null pointer";
-    case FAAM_ERR_BAD_CONTAINER:
-        return "Invalid MP4 atom structure or corrupt container";
+    case FAAM_ERR_UNSUPPORTED:
+        return "Operation or content not supported";
+    case FAAM_ERR_INSUFFICIENT_MEM:
+        return "Insufficient memory";
+    case FAAM_ERR_OUTPUT_TOO_SMALL:
+        return "Output buffer too small";
     case FAAM_ERR_IO_READ:
         return "I/O read error or premature EOF";
     case FAAM_ERR_IO_WRITE:
         return "I/O write error";
-    case FAAM_ERR_INSUFFICIENT_MEM:
-        return "Insufficient memory";
+    case FAAM_ERR_BAD_CONTAINER:
+        return "Invalid MP4 atom structure or corrupt container";
     case FAAM_ERR_NO_TRACK:
         return "No matching video/audio track found in container";
-    case FAAM_ERR_OUTPUT_TOO_SMALL:
-        return "Output buffer too small";
-    case FAAM_END_OF_STREAM:
-        return "End of stream";
-    case FAAM_ERR_UNSUPPORTED:
-        return "Operation or content not supported";
     case FAAM_ERR_NOT_BUILT:
         return "Feature compiled out of this build";
+    case FAAM_END_OF_STREAM:
+        return "End of stream";
     default:
         return "Unknown error code";
     }

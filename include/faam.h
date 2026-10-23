@@ -28,23 +28,28 @@
  *     Callers set it to sizeof of their struct; the library accepts any size at or
  *     above the FAAM_*_BASELINE of that struct, reads only the fields that size
  *     covers and, for output structs, writes at most struct_size bytes. New
- *     fields are only ever appended after the last baseline field, explicit
- *     padding is never reused, and a field an older caller cannot know about
- *     takes its zero value. Enum values, signatures and offsets of released
- *     fields never change within a major version.
+ *     fields are appended at or after the previous sizeof(struct), preserving
+ *     alignment; compiler padding is never reused. Explicit reserved fields must
+ *     be zero on input and are zero on output until assigned a future meaning.
+ *     They may be reused with their storage and offsets preserved and zero retaining
+ *     the previous behavior. Callers must check library support before requesting
+ *     new behavior. Absent input fields take their zero value. Baseline sizes,
+ *     enum values, signatures and offsets of released fields stay fixed within
+ *     a major version.
  *   - No struct is embedded in another and none holds an array of structs (fixed char
- *     arrays aside). Input lists
- *     (tracks, chapters, custom tags) are a pointer and a count, strided by the
- *     struct_size of the first element, so a list is one array of one struct
- *     size. Output lists are read one element at a time by index.
+ *     arrays aside). Input lists (tracks, chapters, metadata entries) are a pointer and
+ *     a count, strided by the struct_size of the first element, so a list is one array
+ *     of one struct size. Output lists are a count getter plus a getter by index.
  *   - Every open call takes a config struct (the demuxer's may be NULL for
  *     defaults), so a knob can be added later without changing a signature.
  *   - Compile-time options (muxer-video, muxer-fragmented) change what a call
  *     accepts, never a layout; faam_get_library_info() reports them.
+ *   - Independent handles may be used concurrently; one handle is owned by one thread
+ *     at a time. The library has no global mutable state.
  *
  * Status contract:
  *   - A NULL pointer, NULL io or out parameter, or an otherwise invalid
- *     argument returns FAAM_ERR_INVALID_ARG.
+ *     argument returns FAAM_ERR_INVALID_ARGUMENT.
  *   - A callback the operation needs but the io leaves NULL returns
  *     FAAM_ERR_UNSUPPORTED, as does content or a call the library cannot handle; a
  *     feature compiled out of this build returns FAAM_ERR_NOT_BUILT. Each function
@@ -111,18 +116,24 @@ extern "C" {
 typedef struct faam_demuxer faam_demuxer;
 typedef struct faam_muxer   faam_muxer;
 
+/*
+ * Result codes. All values are negative except FAAM_OK and FAAM_END_OF_STREAM, so a
+ * caller can test `status < 0` for failure. FAAM_END_OF_STREAM (+1) is not an error.
+ * The FAAM_STATUS_MAX sentinel pins the enum to a 32-bit underlying type for a stable
+ * ABI under -fshort-enums.
+ */
 typedef enum faam_status {
     FAAM_OK                   = 0,
-    FAAM_ERR_INVALID_ARG      = -1,
-    FAAM_ERR_BAD_CONTAINER    = -2, /* Invalid MP4 atom structure or missing track */
-    FAAM_ERR_IO_READ          = -3, /* A read callback failed or a read ended short of data the caller needs */
-    FAAM_ERR_IO_WRITE         = -4, /* I/O write failure */
-    FAAM_ERR_INSUFFICIENT_MEM = -5, /* An allocation failed */
-    FAAM_ERR_NO_TRACK         = -6, /* No matching video/audio track found */
-    FAAM_ERR_UNSUPPORTED      = -7, /* A required io callback is NULL, or the call or content is not supported */
-    FAAM_ERR_OUTPUT_TOO_SMALL = -8, /* *out_len reports the required output capacity */
-    FAAM_ERR_NOT_BUILT        = -10, /* The feature is compiled out of this build (see faam_library_info.features) */
-    FAAM_END_OF_STREAM        = 1,   /* Not an error: no more frames */
+    FAAM_ERR_INVALID_ARGUMENT = -1,
+    FAAM_ERR_UNSUPPORTED      = -2, /* A required io callback is NULL, or the call or content is not supported */
+    FAAM_ERR_INSUFFICIENT_MEM = -3, /* An allocation failed */
+    FAAM_ERR_OUTPUT_TOO_SMALL = -4, /* *out_len reports the required output capacity */
+    FAAM_ERR_IO_READ          = -5, /* A read callback failed or a read ended short of data the caller needs */
+    FAAM_ERR_IO_WRITE         = -6, /* I/O write failure */
+    FAAM_ERR_BAD_CONTAINER    = -7, /* Invalid MP4 atom structure or missing track */
+    FAAM_ERR_NO_TRACK         = -8, /* No matching video/audio track found */
+    FAAM_ERR_NOT_BUILT        = -9, /* The feature is compiled out of this build (see faam_library_info.features) */
+    FAAM_END_OF_STREAM        = 1, /* Not an error: no more frames */
     FAAM_STATUS_MAX           = 0x7fffffff
 } faam_status;
 
@@ -170,9 +181,10 @@ typedef enum faam_codec_id {
 /* Abstract Stream I/O for embedded platforms (SPIFFS, SDMMC, RAM, network). Set struct_size to
  * sizeof(faam_io); a missing optional callback is NULL. The callbacks return a signed 32-bit
  * count, so the library never asks one read or write for more than INT32_MAX bytes: a caller
- * input that would need that is refused with FAAM_ERR_INVALID_ARG before any I/O. */
+ * input that would need that is refused with FAAM_ERR_INVALID_ARGUMENT before any I/O. */
 typedef struct faam_io {
     uint32_t struct_size;
+    uint32_t reserved0;
     void    *user_data;
     int32_t (*read)(void *user_data, void *buf, uint32_t bytes_to_read);
     int32_t (*write)(void *user_data, const void *buf, uint32_t bytes_to_write);
@@ -186,8 +198,8 @@ typedef struct faam_io {
  * of the audio track's timescale (for HE-AAC the core rate: one frame is 1024).
  * Progressive muxer: when total_samples is 0 and a delay or padding is set, finalize
  * derives it as the track's total sample duration minus delay and padding; if that is
- * not positive the programme is empty and the edit list gets a zero segment length, as
- * master's writer does. The edit list needs encoder_delay > 0. It is
+ * not positive the programme is empty and the edit list gets a zero segment length. The
+ * edit list needs encoder_delay > 0. It is
  * written, identical, into every audio track unless a track config carries its own. A
  * fragmented muxer writes it only when total_samples is given at open. The demuxer fills
  * this from iTunSMPB, else from the edit list of the first audio track that has one
@@ -234,7 +246,8 @@ typedef struct faam_track_config {
     uint16_t        width;            /* Video frame width in pixels (video tracks) */
     uint16_t        height;           /* Video frame height in pixels (video tracks) */
     uint16_t        rotation_degrees; /* Video display rotation: 0, 90, 180 or 270 clockwise */
-    uint16_t        reserved0;
+    uint16_t        audio_sample_size; /* Audio: bits per sample of the source PCM, 0 for the default 16;
+                                        * informational, it does not alter encoded audio. Ignored for video */
     char            language[4];      /* ISO 639-2/T; the first three characters count, letters are stored
                                        * lowercase, NUL-terminated input shorter than 3 characters or any
                                        * non-letter makes it und */
@@ -249,7 +262,7 @@ typedef struct faam_track_config {
  * NAL units; the caller's buffer is never modified and nothing is allocated. For H.264 the
  * track may then omit codec_data (NULL, 0): the avcC is built from the first SPS and the
  * first PPS that follows it, so the first access unit must carry them, and finalize fails
- * with FAAM_ERR_INVALID_ARG if none was seen. width and height are still required.
+ * with FAAM_ERR_INVALID_ARGUMENT if none was seen. width and height are still required.
  * H.265 needs a caller-supplied hvcC. */
 
 /* faam_track_info.flags */
@@ -294,67 +307,85 @@ typedef struct faam_frame_loc {
 } faam_frame_loc;
 #define FAAM_FRAME_LOC_BASELINE FAAM_STRUCT_END(faam_frame_loc, is_keyframe)
 
-/* Custom key-value tag entry */
-typedef struct faam_custom_tag {
-    uint32_t struct_size;
-    uint32_t reserved0;
-    const char *name;
-    const char *value;
-    const char *mean;         /* Freeform namespace ('mean' atom), NULL = com.apple.iTunes */
-} faam_custom_tag;
-#define FAAM_CUSTOM_TAG_BASELINE FAAM_STRUCT_END(faam_custom_tag, mean)
+/* Native ilst keys are four bytes, including bytes such as 0xa9 (not UTF-8).
+ * FAAM_FOURCC(0xa9, 'l', 'y', 'r') is the interoperable lyrics key. */
+#define FAAM_FOURCC(a, b, c, d) \
+    (((uint32_t)(uint8_t)(a) << 24) | ((uint32_t)(uint8_t)(b) << 16) | \
+     ((uint32_t)(uint8_t)(c) << 8) | (uint32_t)(uint8_t)(d))
 
-/* faam_metadata.cover_type. AUTO detects PNG, GIF (GIF87a/GIF89a), JPEG
- * (FF D8 FF), and BMP (file/DIB header checks). Unrecognized AUTO artwork
- * returns FAAM_ERR_INVALID_ARG when writing. Explicit types are honored.
- * Demux reports AUTO for unrecognized artwork with an unknown declared type,
- * preserving the bytes. Detection identifies formats, not pixel validity. */
-enum faam_cover_type {
-    FAAM_COVER_AUTO = 0,
-    FAAM_COVER_JPEG = 1,
-    FAAM_COVER_PNG = 2,
-    FAAM_COVER_GIF = 3,
-    FAAM_COVER_BMP = 4,
-    FAAM_COVER_MAX = 0x7fffffff
+/* Common ISO/QuickTime ilst keys. Generic metadata callers may still use any
+ * FourCC; these names keep common keys consistent across the library, frontend,
+ * and C tests. Freeform entries also require a name (and optionally a mean). */
+#define FAAM_METADATA_KEY_TITLE                 FAAM_FOURCC(0xa9, 'n', 'a', 'm')
+#define FAAM_METADATA_KEY_TITLE_SORT            FAAM_FOURCC('s', 'o', 'n', 'm')
+#define FAAM_METADATA_KEY_ARTIST                FAAM_FOURCC(0xa9, 'A', 'R', 'T')
+#define FAAM_METADATA_KEY_ARTIST_SORT           FAAM_FOURCC('s', 'o', 'a', 'r')
+#define FAAM_METADATA_KEY_ALBUM                 FAAM_FOURCC(0xa9, 'a', 'l', 'b')
+#define FAAM_METADATA_KEY_ALBUM_SORT            FAAM_FOURCC('s', 'o', 'a', 'l')
+#define FAAM_METADATA_KEY_ALBUM_ARTIST          FAAM_FOURCC('a', 'A', 'R', 'T')
+#define FAAM_METADATA_KEY_ALBUM_ARTIST_SORT     FAAM_FOURCC('s', 'o', 'a', 'a')
+#define FAAM_METADATA_KEY_COMPOSER              FAAM_FOURCC(0xa9, 'w', 'r', 't')
+#define FAAM_METADATA_KEY_COMPOSER_SORT         FAAM_FOURCC('s', 'o', 'c', 'o')
+#define FAAM_METADATA_KEY_GENRE                 FAAM_FOURCC(0xa9, 'g', 'e', 'n')
+#define FAAM_METADATA_KEY_GENRE_CODE            FAAM_FOURCC('g', 'n', 'r', 'e')
+#define FAAM_METADATA_KEY_YEAR                  FAAM_FOURCC(0xa9, 'd', 'a', 'y')
+#define FAAM_METADATA_KEY_COMMENT               FAAM_FOURCC(0xa9, 'c', 'm', 't')
+#define FAAM_METADATA_KEY_ENCODER               FAAM_FOURCC(0xa9, 't', 'o', 'o')
+#define FAAM_METADATA_KEY_COMPILATION           FAAM_FOURCC('c', 'p', 'i', 'l')
+#define FAAM_METADATA_KEY_TRACK                 FAAM_FOURCC('t', 'r', 'k', 'n')
+#define FAAM_METADATA_KEY_DISC                  FAAM_FOURCC('d', 'i', 's', 'k')
+#define FAAM_METADATA_KEY_COVER_ART             FAAM_FOURCC('c', 'o', 'v', 'r')
+#define FAAM_METADATA_KEY_LYRICS                FAAM_FOURCC(0xa9, 'l', 'y', 'r')
+#define FAAM_METADATA_KEY_GROUPING              FAAM_FOURCC(0xa9, 'g', 'r', 'p')
+#define FAAM_METADATA_KEY_COPYRIGHT             FAAM_FOURCC('c', 'p', 'r', 't')
+#define FAAM_METADATA_KEY_DESCRIPTION           FAAM_FOURCC('d', 'e', 's', 'c')
+#define FAAM_METADATA_KEY_LONG_DESCRIPTION      FAAM_FOURCC('l', 'd', 'e', 's')
+#define FAAM_METADATA_KEY_WORK                  FAAM_FOURCC(0xa9, 'w', 'r', 'k')
+#define FAAM_METADATA_KEY_MOVEMENT              FAAM_FOURCC(0xa9, 'm', 'v', 'n')
+#define FAAM_METADATA_KEY_BPM                   FAAM_FOURCC('t', 'm', 'p', 'o')
+#define FAAM_METADATA_KEY_MOVEMENT_NUMBER       FAAM_FOURCC(0xa9, 'm', 'v', 'i')
+#define FAAM_METADATA_KEY_MOVEMENT_TOTAL        FAAM_FOURCC(0xa9, 'm', 'v', 'c')
+#define FAAM_METADATA_KEY_SHOW_WORK_MOVEMENT    FAAM_FOURCC('s', 'h', 'w', 'm')
+#define FAAM_METADATA_KEY_FREEFORM              FAAM_FOURCC('-', '-', '-', '-')
+
+enum faam_metadata_data_type {
+    FAAM_METADATA_IMPLICIT = 0,
+    FAAM_METADATA_UTF8 = 1,
+    FAAM_METADATA_UTF16 = 2, /* big endian */
+    FAAM_METADATA_GIF = 12,
+    FAAM_METADATA_JPEG = 13,
+    FAAM_METADATA_PNG = 14,
+    FAAM_METADATA_INTEGER = 21, /* big endian; payload specifies the width */
+    FAAM_METADATA_BMP = 27,
+    FAAM_METADATA_DATA_TYPE_MAX = 0x7fffffff
+};
+enum faam_metadata_entry_flag {
+    FAAM_METADATA_REMOVE = 0x1, /* Remove this key; data must be NULL/0 */
+    FAAM_METADATA_ENTRY_FLAG_MAX = 0x7fffffff
 };
 
-/* Strings, artwork, arrays, and their contents are borrowed until finalize/update.
- * Demuxer output pointers remain valid until that demuxer is closed. From the demuxer,
- * custom_tags is NULL and num_custom_tags the count; read each with
- * faam_demuxer_get_custom_tag(). To the muxer and the update calls, custom_tags is an
- * array of faam_custom_tag strided by its first element's struct_size. Set struct_size
- * to sizeof(faam_metadata) in both directions. */
-typedef struct faam_metadata {
+/* One ilst data value. Payload is exactly data_bytes bytes, without an implied
+ * terminator; text is UTF-8 when data_type is FAAM_METADATA_UTF8. Other 24-bit
+ * data types and binary payloads are supported without interpretation. locale
+ * is the data box's 32-bit locale. For '----', name is required and mean defaults
+ * to com.apple.iTunes; native keys require NULL mean/name. Identity is the key,
+ * plus mean/name for '----' (not data type or locale). Repeated keys supply
+ * multiple values; do not mix REMOVE and values for the same key.
+ * Inputs are borrowed through finalize/update; getter output lives until close.
+ * REMOVE entries are omitted when muxing (and suppress an automatic iTunSMPB
+ * tag when that freeform key is explicitly supplied). */
+typedef struct faam_metadata_entry {
     uint32_t struct_size;
-    uint32_t cover_bytes;
-    const char *title;
-    const char *title_sort;
-    const char *artist;
-    const char *artist_sort;
-    const char *album;
-    const char *album_sort;
-    const char *album_artist;
-    const char *album_artist_sort;
-    const char *composer;
-    const char *composer_sort;
-    const char *genre_str;
-    const char *year;
-    const char *comment;
-    const char *encoder;
-    const uint8_t *cover_art;
-    const faam_custom_tag *custom_tags;
-    uint32_t num_custom_tags;
-    uint16_t genre_code;
-    uint16_t track_num;
-    uint16_t track_total;
-    uint16_t disc_num;
-    uint16_t disc_total;
-    bool     compilation;
-    uint8_t  cover_type;       /* FAAM_COVER_*; demux reports the declared type:
-                               * 12 GIF, 13 JPEG, 14 PNG, 27 BMP. Other declared
-                               * types use the same byte detection as AUTO. */
-} faam_metadata;
-#define FAAM_METADATA_BASELINE FAAM_STRUCT_END(faam_metadata, cover_type)
+    uint32_t key;
+    uint32_t data_type;
+    uint32_t locale;
+    const void *data;
+    uint32_t data_bytes;
+    uint32_t flags;
+    const char *mean;
+    const char *name;
+} faam_metadata_entry;
+#define FAAM_METADATA_ENTRY_BASELINE FAAM_STRUCT_END(faam_metadata_entry, name)
 
 
 /* --- Stream Demuxer API (MP4/M4A/M4B -> Demuxer) --- */
@@ -392,7 +423,9 @@ FAAMAPI faam_status faam_demuxer_get_track_info(faam_demuxer *d, uint32_t track_
 
 /* Copies codec-specific decoder configuration: the AudioSpecificConfig, the avcC/hvcC
  * record, or for an mp4v (MPEG-4 Visual) track, which reports FAAM_CODEC_GENERIC, the
- * DecoderSpecificInfo (VOL configuration) from its esds. */
+ * DecoderSpecificInfo (VOL configuration) from its esds. On
+ * FAAM_ERR_OUTPUT_TOO_SMALL, *out_len is the required capacity; retry with that size.
+ * A NULL out_buf with zero buf_cap queries the required size. */
 FAAMAPI faam_status faam_demuxer_get_codec_data(faam_demuxer *d, uint32_t track_id,
                                                 uint8_t *out_buf, uint32_t buf_cap,
                                                 uint32_t *out_len);
@@ -406,20 +439,29 @@ FAAMAPI faam_status faam_demuxer_get_major_brand(faam_demuxer *d, char out_brand
  * when neither exists. Set out_gapless->struct_size to sizeof. */
 FAAMAPI faam_status faam_demuxer_get_track_gapless(faam_demuxer *d, uint32_t track_id, faam_gapless_info *out_gapless);
 
-FAAMAPI faam_status faam_demuxer_get_metadata(faam_demuxer *d, faam_metadata *out_meta);
+/* Number of ilst values; read each with faam_demuxer_get_metadata_entry(). */
+FAAMAPI faam_status faam_demuxer_get_num_metadata(faam_demuxer *d, uint32_t *out_count);
+/* Set out_entry->struct_size to sizeof. Enumerates every supported ilst data child, including native, freeform and
+ * repeated values. Unknown data types are returned as bytes; malformed/opaque
+ * atoms without a usable data child are not enumerated. */
+FAAMAPI faam_status faam_demuxer_get_metadata_entry(faam_demuxer *d, uint32_t index, faam_metadata_entry *out_entry);
 
-/* Custom tags beyond the count in faam_metadata are not reachable; index from 0. Set
- * out_tag->struct_size to sizeof. The strings live until the demuxer is closed. */
-FAAMAPI faam_status faam_demuxer_get_custom_tag(faam_demuxer *d, uint32_t index, faam_custom_tag *out_tag);
+
 
 /* Up to 255 chapters exist (the Nero chpl count byte). Set out_chapter->struct_size to sizeof. */
 FAAMAPI faam_status faam_demuxer_get_num_chapters(faam_demuxer *d, uint32_t *out_count);
 FAAMAPI faam_status faam_demuxer_get_chapter(faam_demuxer *d, uint32_t index, faam_chapter *out_chapter);
 
-/* Returns FAAM_END_OF_STREAM (a positive, non-error status) after the last frame. Frames of
- * all held tracks come interleaved in file order; faam_frame_loc.track_id says which. */
+/* Returns the next frame's location without consuming it. Repeated calls return
+ * the same location until faam_demuxer_read_frame() consumes or skips that frame.
+ * Frames of all held tracks come interleaved in file order; track_id says which.
+ * Returns FAAM_END_OF_STREAM after the last frame. */
 FAAMAPI faam_status faam_demuxer_next_frame_loc(faam_demuxer *d, faam_frame_loc *out_loc);
 
+/* Reads and consumes the next frame. Set out_frame to NULL to skip it; otherwise
+ * frame_cap must fit the whole frame. On FAAM_ERR_OUTPUT_TOO_SMALL, frame_bytes
+ * receives the required capacity and the frame remains available for retry.
+ * A read error also leaves the frame cursor unchanged. */
 FAAMAPI faam_status faam_demuxer_read_frame(faam_demuxer *d,
                                             uint8_t *out_frame, uint32_t frame_cap,
                                             uint32_t *frame_bytes);
@@ -439,10 +481,10 @@ enum faam_muxer_flag {
 };
 
 /* Muxer open parameters. Fill with faam_muxer_config_init(), then set the fields you need.
- * tracks are read at open. chapters and metadata are borrowed until finalize: a progressive file
- * reads the metadata then, so that struct may still be filled in until finalize (set its
- * struct_size before finalize); a fragmented file writes both at open. tracks and chapters are
- * arrays strided by their first element's struct_size. */
+ * tracks are read at open. chapters and metadata are borrowed until finalize; a fragmented file
+ * writes both at open. A progressive file whose tags are not known yet supplies them later with
+ * FAAM_UPDATE_METADATA. tracks, chapters and metadata are arrays strided by their first
+ * element's struct_size. */
 typedef struct faam_muxer_config {
     uint32_t            struct_size;
     uint32_t            flags;           /* FAAM_MUXER_* bits */
@@ -454,9 +496,11 @@ typedef struct faam_muxer_config {
                                           * see faam_muxer_open */
     uint32_t            num_tracks;      /* 1 to max_tracks */
     uint32_t            num_chapters;    /* Chapter count, at most 255 */
+    uint32_t            num_metadata;    /* Metadata entry count */
+    uint32_t            reserved0;
     const faam_track_config *tracks;     /* num_tracks entries */
     const faam_chapter *chapters;        /* Chapters list to inject; every title must be non-NULL */
-    const faam_metadata *metadata;       /* May be NULL */
+    const faam_metadata_entry *metadata; /* num_metadata entries; NULL when 0 */
     const faam_gapless_info *gapless;    /* Priming/padding for iTunSMPB and the edit list; NULL: none */
 } faam_muxer_config;
 #define FAAM_MUXER_CONFIG_BASELINE FAAM_STRUCT_END(faam_muxer_config, gapless)
@@ -500,35 +544,35 @@ enum faam_update_flag {
     FAAM_UPDATE_GAPLESS = 0x2,
     FAAM_UPDATE_CODEC_DATA = 0x4, /* track_id, codec_data, codec_data_len */
     FAAM_UPDATE_LANGUAGE = 0x8, /* track_id, language */
-    FAAM_UPDATE_AUDIO_SAMPLE_SIZE = 0x10, /* track_id, audio_sample_size */
+    FAAM_UPDATE_METADATA = 0x10, /* metadata, num_metadata: replaces the config's list */
     FAAM_UPDATE_FLAG_MAX = 0x7fffffff
 };
 
 /* Late configuration for progressive files whose writer learns something only after the
  * first frame (an encoder's AudioSpecificConfig, the programme length). Fields not named
  * in flags are ignored. Returns FAAM_ERR_UNSUPPORTED on a fragmented muxer, whose moov is
- * already on disk, and FAAM_ERR_INVALID_ARG after finalize. codec_data is at most
+ * already on disk, and FAAM_ERR_INVALID_ARGUMENT after finalize. codec_data is at most
  * FAAM_CODEC_DATA_MAX bytes and is copied; language follows the faam_track_config rule.
- * creation_time is Unix seconds, see faam_muxer_config. audio_sample_size is the source PCM
- * sample-size field of the faac container writer (AAC defaults to 16); informational, it
- * does not alter encoded audio. */
+ * creation_time is Unix seconds, see faam_muxer_config. metadata is borrowed until finalize,
+ * like the config's. */
 typedef struct faam_muxer_update_params {
     uint32_t struct_size;
     uint32_t flags;
     uint32_t track_id;
     uint32_t creation_time;
     uint32_t codec_data_len;
-    uint16_t audio_sample_size;
-    uint16_t reserved0;
+    uint32_t num_metadata;
     char     language[4];
+    uint8_t  reserved0[4];
     const uint8_t *codec_data;
     const faam_gapless_info *gapless;
+    const faam_metadata_entry *metadata;
 } faam_muxer_update_params;
-#define FAAM_MUXER_UPDATE_PARAMS_BASELINE FAAM_STRUCT_END(faam_muxer_update_params, gapless)
+#define FAAM_MUXER_UPDATE_PARAMS_BASELINE FAAM_STRUCT_END(faam_muxer_update_params, metadata)
 
 FAAMAPI faam_status faam_muxer_update(faam_muxer *m, const faam_muxer_update_params *params);
 
-/* frame_bytes is at most INT32_MAX (FAAM_ERR_INVALID_ARG above it).
+/* frame_bytes is at most INT32_MAX (FAAM_ERR_INVALID_ARGUMENT above it).
  * duration_ticks is the DTS delta to the next frame in track timescale units.
  * cts_offset is PTS - DTS (negative allowed) for B-frame video; pass 0 for audio and
  * I/P-only video, which then writes no ctts box. Non-zero offsets need the muxer-video
@@ -546,7 +590,7 @@ FAAMAPI faam_status faam_muxer_write_frame(faam_muxer *m,
                                            uint32_t frame_flags);
 
 /* Progressive: writes the sample tables and moov, patching the mdat size, so it needs the
- * seek/tell checked at open. Fails with FAAM_ERR_INVALID_ARG (not sticky) when a chapter
+ * seek/tell checked at open. Fails with FAAM_ERR_INVALID_ARGUMENT (not sticky) when a chapter
  * title is NULL or a video track never obtained its codec_data. I/O and allocation
  * failures are sticky. */
 FAAMAPI faam_status faam_muxer_finalize(faam_muxer *m);
@@ -576,16 +620,26 @@ FAAMAPI const char *faam_strerror(faam_status status);
  * seek and tell (FAAM_ERR_UNSUPPORTED if any is NULL) and grow the file as needed,
  * keeping the chunk offsets of moov-first files valid. A moov without udta, or a udta
  * without meta/ilst (tags) or chpl (chapters), gets the missing atoms created. Chapter
- * count is at most 255 and titles must be non-NULL; metadata strings follow the usual
+ * count is at most 255 and titles must be non-NULL; metadata payloads follow the usual
  * borrowing rules. FAAM_ERR_BAD_CONTAINER means the file has no moov; a moov or one of
  * the boxes being edited with a 64-bit size header is FAAM_ERR_UNSUPPORTED, and the file
- * is left as it was. */
-enum faam_tag_update_flag {
-    FAAM_TAG_UPDATE_CLEAR = 0x1, /* Drop all existing ilst atoms, including unmodeled ones */
-    FAAM_TAG_UPDATE_FLAG_MAX = 0x7fffffff
+ * is left as it was. A fragmented recording, finalized or cut short by a crash, can be
+ * tagged too: its completed fragments stay playable. */
+
+/* faam_update_metadata_stream flags */
+enum faam_metadata_update_flag {
+    FAAM_METADATA_UPDATE_CLEAR = 0x1, /* Drop all existing ilst atoms, including opaque ones */
+    FAAM_METADATA_UPDATE_FLAG_MAX = 0x7fffffff
 };
 
-FAAMAPI faam_status faam_update_tags_stream(const faam_io *io, const faam_metadata *meta, uint32_t flags);
+/* Patch only the supplied keys, preserving all other ilst atoms byte-for-byte.
+ * All existing values of each supplied key are replaced by its entries, or
+ * removed with FAAM_METADATA_REMOVE. CLEAR drops all old ilst atoms first.
+ * count == 0 permits entries == NULL. No demux/read-modify-write is needed.
+ * I/O and container restrictions are described above. Existing demuxers must
+ * be closed/reopened before reading the modified file. */
+FAAMAPI faam_status faam_update_metadata_stream(const faam_io *io, const faam_metadata_entry *entries,
+                                               uint32_t count, uint32_t flags);
 /* flags is reserved and must be 0. */
 FAAMAPI faam_status faam_update_chapters_stream(const faam_io *io, const faam_chapter *chapters, uint32_t count, uint32_t flags);
 

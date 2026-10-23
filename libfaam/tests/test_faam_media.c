@@ -61,7 +61,7 @@ static bool mem_seek(void *user, uint64_t pos) { ((memfile *)user)->pos = (size_
 static uint64_t mem_tell(void *user) { return ((memfile *)user)->pos; }
 
 static faam_io mem_io(memfile *f) {
-    faam_io io = { sizeof(faam_io), f, mem_read, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = f, .read = mem_read, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     return io;
 }
 
@@ -69,6 +69,7 @@ static uint32_t be32(const uint8_t *b) {
     return ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | b[3];
 }
 
+#ifdef FAAM_MUXER_VIDEO
 static void test_write_be32(uint8_t *b, uint32_t value) {
     b[0] = (uint8_t)(value >> 24);
     b[1] = (uint8_t)(value >> 16);
@@ -76,7 +77,6 @@ static void test_write_be32(uint8_t *b, uint32_t value) {
     b[3] = (uint8_t)value;
 }
 
-#ifdef FAAM_MUXER_VIDEO
 /* First occurrence of a four-character code at or after `from`; the tests
  * only look for box names that cannot occur in the synthetic payloads. */
 static const uint8_t *find_box(const memfile *f, const char *name, size_t from) {
@@ -245,7 +245,7 @@ static void test_ctts(void) {
     faam_io io = mem_io(&sink);
     faam_muxer *m = open_muxer(&cfg, &io);
     uint8_t byte = 1;
-    CHECK(faam_muxer_write_frame(m, 1, &byte, 1, 1024, 5, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARG);
+    CHECK(faam_muxer_write_frame(m, 1, &byte, 1, 1024, 5, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARGUMENT);
     faam_muxer_close(&m);
     free(sink.buf);
 }
@@ -277,10 +277,10 @@ static void test_annexb(void) {
     faam_muxer_config cfg;
     faam_track_config cfg_tracks[8];
     CHECK(faam_muxer_config_init(&cfg, sizeof(cfg)) == FAAM_OK);
-    CHECK(test_append_track(&cfg, cfg_tracks, &t, NULL) == FAAM_ERR_INVALID_ARG);   /* avcC needed without Annex-B */
+    CHECK(test_append_track(&cfg, cfg_tracks, &t, NULL) == FAAM_ERR_INVALID_ARGUMENT);   /* avcC needed without Annex-B */
     t.flags = FAAM_TRACK_ANNEXB;
     t.codec_id = FAAM_CODEC_H265;
-    CHECK(test_append_track(&cfg, cfg_tracks, &t, NULL) == FAAM_ERR_INVALID_ARG);   /* hvcC cannot be derived */
+    CHECK(test_append_track(&cfg, cfg_tracks, &t, NULL) == FAAM_ERR_INVALID_ARGUMENT);   /* hvcC cannot be derived */
     t.codec_id = FAAM_CODEC_H264;
     CHECK(test_append_track(&cfg, cfg_tracks, &t, NULL) == FAAM_OK);
 
@@ -301,9 +301,9 @@ static void test_annexb(void) {
     faam_io io = mem_io(&f);
     faam_muxer *m = open_muxer(&cfg, &io);
     uint8_t not_annexb[8] = { 0, 0, 0, 5, 0x65, 1, 2, 3 };
-    CHECK(faam_muxer_write_frame(m, 1, not_annexb, sizeof(not_annexb), 3000, 0, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARG);
+    CHECK(faam_muxer_write_frame(m, 1, not_annexb, sizeof(not_annexb), 3000, 0, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARGUMENT);
     uint8_t junk_first[6] = { 9, 0, 0, 1, 0x65, 1 };
-    CHECK(faam_muxer_write_frame(m, 1, junk_first, sizeof(junk_first), 3000, 0, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARG);
+    CHECK(faam_muxer_write_frame(m, 1, junk_first, sizeof(junk_first), 3000, 0, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARGUMENT);
     CHECK(faam_muxer_write_frame(m, 1, au1, n1, 3000, 0, FAAM_FRAME_KEYFRAME) == FAAM_OK);
     CHECK(faam_muxer_write_frame(m, 1, au2, n2, 3000, 0, 0) == FAAM_OK);
     CHECK(faam_muxer_finalize(m) == FAAM_OK);
@@ -336,7 +336,7 @@ static void test_annexb(void) {
     io = mem_io(&f);
     m = open_muxer(&cfg, &io);
     CHECK(faam_muxer_write_frame(m, 1, au2, n2, 3000, 0, FAAM_FRAME_KEYFRAME) == FAAM_OK);
-    CHECK(faam_muxer_finalize(m) == FAAM_ERR_INVALID_ARG);
+    CHECK(faam_muxer_finalize(m) == FAAM_ERR_INVALID_ARGUMENT);
     faam_muxer_close(&m);
     free(f.buf);
 }
@@ -640,6 +640,7 @@ static void test_fragmented_av(void)
         CHECK(part.n == expect);
         break;
     }
+
     free(f.buf);
 
     /* Crash without finalize: snapshots mid-recording see only closed fragments. */
@@ -666,6 +667,26 @@ static void test_fragmented_av(void)
         check_prefix_of(&want, &part);
         unsigned lo = frames_complete(&full, &got, snap.len, true), hi = frames_complete(&full, &got, snap.len, 0);
         CHECK(part.n == lo || part.n == hi);
+
+        /* The crashed recording can still be tagged in place: growing the moov must leave every
+         * completed fragment playable, since each locates its data relative to its own moof. */
+        memfile tagged = {0};
+        tagged.cap = snap.len + 8192;
+        tagged.buf = (uint8_t *)malloc(tagged.cap);
+        CHECK(tagged.buf);
+        memcpy(tagged.buf, snap.buf, snap.len);
+        tagged.len = snap.len;
+        uint8_t title[3000];
+        memset(title, 'T', sizeof(title));
+        faam_metadata_entry e = { .struct_size = sizeof(e), .key = FAAM_METADATA_KEY_TITLE,
+                                  .data_type = FAAM_METADATA_UTF8, .data = title, .data_bytes = sizeof(title) };
+        faam_io tio = mem_io(&tagged);
+        CHECK(faam_update_metadata_stream(&tio, &e, 1, 0) == FAAM_OK);
+        frame_list after;
+        demux_all(&tagged, &after);
+        CHECK(after.n == part.n);
+        check_prefix_of(&want, &after);
+        free(tagged.buf);
     }
     faam_muxer_close(&m);
     free(f.buf);

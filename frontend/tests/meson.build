@@ -22,6 +22,11 @@ test_cli_same_file = executable('test_cli_same_file', 'test_cli_same_file.c',
 test('test_unit_frontend_cli_same_file', test_cli_same_file,
     args: [meson.current_build_dir()])
 
+test_cover_art = executable('test_cover_art', 'test_cover_art.c',
+    c_args: c_args_list,
+    include_directories: ['../../include', common_inc])
+test('test_unit_frontend_cover_art', test_cover_art)
+
 test_output = executable('test_output', ['test_output.c', '../output.c'],
     c_args: c_args_list,
     include_directories: ['..', '../..', '../../include'])
@@ -93,4 +98,9 @@ if get_option('muxer') and get_option('encoder') and get_option('decoder') and n
                get_option('max-channels').to_string(), get_option('decoder-sbr').to_string(),
                get_option('decoder-drc').to_string()])
     subdir('faad')
+
+    test('test_e2e_faam_metadata_cli', find_program('python3'),
+        args: [files('test_faam_metadata_cli.py'), faam, test_faam_metadata])
+    test('test_e2e_faam_metadata_mutagen', find_program('python3'),
+        args: [files('test_faam_metadata_mutagen.py'), faam, test_faam_metadata])
 endif

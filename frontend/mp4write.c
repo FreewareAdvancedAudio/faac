@@ -34,6 +34,8 @@
 #include "faam.h"
 #include "cli_io.h"
 #include "mp4write.h"
+#include "endian.h"
+#include "cover_art.h"
 #ifdef _WIN32
 #include "charset.h"
 #include "cli_io.h"
@@ -64,7 +66,7 @@ static struct {
 
     FILE *fout;
     faam_muxer *mux;
-    faam_metadata meta;
+    uint32_t num_metadata;
 
     uint32_t creation_time;
     const char *encoder;
@@ -75,7 +77,6 @@ static struct {
     uint16_t ntracks;
     uint16_t discno;
     uint16_t ndiscs;
-    uint16_t genre;
 
     struct {
         const uint8_t *data;
@@ -89,7 +90,8 @@ static struct {
         uint64_t original_samples;
     } gapless;
 
-    faam_custom_tag *custom;
+    faam_metadata_entry *custom;
+    faam_metadata_entry *entries;
     uint32_t customcnt;
     uint32_t customcap;
 } g_mp4 = { 0 };
@@ -131,7 +133,6 @@ static bool open_muxer(void) {
     if (faam_muxer_config_init(&cfg, sizeof(cfg)) != FAAM_OK) return false;
     if (g_mp4.constant_rate) cfg.flags |= FAAM_MUXER_CONSTANT_RATE;
     if (g_mp4.faststart) cfg.flags |= FAAM_MUXER_FASTSTART;
-    cfg.metadata = &g_mp4.meta; /* filled in by mp4_finish(), which the muxer reads when it finalizes */
 
     faam_track_config track = { .struct_size = sizeof(track) };
     track.track_type = FAAM_TRACK_AUDIO;
@@ -140,6 +141,7 @@ static bool open_muxer(void) {
     track.timescale = g_mp4.samplerate;
     track.sample_rate = g_mp4.samplerate;
     track.channels = g_mp4.channels;
+    track.audio_sample_size = (uint16_t)g_mp4.bits;
     cfg.tracks = &track;
     cfg.num_tracks = 1;
 
@@ -148,12 +150,7 @@ static bool open_muxer(void) {
     faam_io io = cli_faam_io(g_mp4.fout);
     if (!g_mp4.faststart) io.read = NULL;
     if (faam_muxer_open(&cfg, &io, &g_mp4.mux) != FAAM_OK) return false;
-    if (g_mp4.bits) {
-        faam_muxer_update_params update = { .struct_size = sizeof(update), .flags = FAAM_UPDATE_AUDIO_SAMPLE_SIZE };
-        update.track_id = MP4_TRACK_ID;
-        update.audio_sample_size = (uint16_t)g_mp4.bits;
-        faam_muxer_update(g_mp4.mux, &update);
-    }
+
     return true;
 }
 
@@ -183,7 +180,6 @@ void mp4_set_tag(mp4_tag_id_t id, const char *value) {
         g_mp4.tags[id] = value;
 }
 
-void mp4_set_genre(uint16_t genre) { g_mp4.genre = genre; }
 
 void mp4_set_language(const char *lang) { g_mp4.language = lang; }
 
@@ -230,7 +226,12 @@ int mp4_add_custom_tag(const char *name, const char *value) {
     g_mp4.custom[g_mp4.customcnt].struct_size = sizeof(g_mp4.custom[0]);
     g_mp4.custom[g_mp4.customcnt].mean = "faac"; /* master's namespace */
     g_mp4.custom[g_mp4.customcnt].name = name_copy;
-    g_mp4.custom[g_mp4.customcnt].value = value_copy;
+    g_mp4.custom[g_mp4.customcnt].data = value_copy;
+    g_mp4.custom[g_mp4.customcnt].key = FAAM_METADATA_KEY_FREEFORM;
+    g_mp4.custom[g_mp4.customcnt].data_type = FAAM_METADATA_UTF8;
+    g_mp4.custom[g_mp4.customcnt].data_bytes = (uint32_t)strlen(value_copy);
+    g_mp4.custom[g_mp4.customcnt].locale = 0;
+    g_mp4.custom[g_mp4.customcnt].flags = 0;
     g_mp4.customcnt++;
     return 0;
 }
@@ -244,33 +245,46 @@ int mp4_write_frame(const uint8_t *data, uint32_t size, uint32_t samples) {
 int mp4_finish(void) {
     if (!open_muxer()) return 1;
 
-    faam_metadata *m = &g_mp4.meta;
-    memset(m, 0, sizeof(*m));
-    m->struct_size = sizeof(*m);
-    m->encoder = g_mp4.encoder;
-    m->artist = g_mp4.tags[MP4TAG_ARTIST];
-    m->artist_sort = g_mp4.tags[MP4TAG_ARTISTSORT];
-    m->composer = g_mp4.tags[MP4TAG_COMPOSER];
-    m->composer_sort = g_mp4.tags[MP4TAG_COMPOSERSORT];
-    m->title = g_mp4.tags[MP4TAG_TITLE];
-    m->album = g_mp4.tags[MP4TAG_ALBUM];
-    m->album_artist = g_mp4.tags[MP4TAG_ALBUMARTIST];
-    m->album_artist_sort = g_mp4.tags[MP4TAG_ALBUMARTISTSORT];
-    m->album_sort = g_mp4.tags[MP4TAG_ALBUMSORT];
-    m->genre_str = g_mp4.tags[MP4TAG_GENRE];
-    m->genre_code = g_mp4.genre;
-    m->year = g_mp4.tags[MP4TAG_YEAR];
-    m->comment = g_mp4.tags[MP4TAG_COMMENT];
-    m->compilation = g_mp4.compilation;
-    m->track_num = g_mp4.trackno;
-    m->track_total = g_mp4.ntracks;
-    m->disc_num = g_mp4.discno;
-    m->disc_total = g_mp4.ndiscs;
-    m->cover_art = g_mp4.cover.data;
-    m->cover_bytes = g_mp4.cover.size;
-    /* cover_type stays AUTO: a PNG is labelled PNG, where master labelled every cover JPEG. */
-    m->custom_tags = g_mp4.custom;
-    m->num_custom_tags = g_mp4.customcnt;
+    g_mp4.num_metadata = 0;
+    free(g_mp4.entries);
+    g_mp4.entries = NULL;
+    if (g_mp4.customcnt > UINT32_MAX - MP4TAG_COUNT - 8) return 1;
+    g_mp4.entries = calloc((size_t)g_mp4.customcnt + MP4TAG_COUNT + 8, sizeof(*g_mp4.entries));
+    if (!g_mp4.entries) return 1;
+    static const uint32_t keys[MP4TAG_COUNT] = {
+        FAAM_METADATA_KEY_ARTIST, FAAM_METADATA_KEY_ARTIST_SORT,
+        FAAM_METADATA_KEY_COMPOSER, FAAM_METADATA_KEY_COMPOSER_SORT,
+        FAAM_METADATA_KEY_TITLE, FAAM_METADATA_KEY_ALBUM,
+        FAAM_METADATA_KEY_ALBUM_ARTIST, FAAM_METADATA_KEY_ALBUM_ARTIST_SORT,
+        FAAM_METADATA_KEY_ALBUM_SORT, FAAM_METADATA_KEY_GENRE,
+        FAAM_METADATA_KEY_YEAR, FAAM_METADATA_KEY_COMMENT
+    };
+    for (unsigned i = 0; i <= MP4TAG_COUNT; i++) {
+        const char *text = i == MP4TAG_COUNT ? g_mp4.encoder : g_mp4.tags[i];
+        if (!text) continue;
+        g_mp4.entries[g_mp4.num_metadata++] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry),
+            .key = i == MP4TAG_COUNT ? FAAM_METADATA_KEY_ENCODER : keys[i],
+            .data_type = FAAM_METADATA_UTF8, .data = text, .data_bytes = (uint32_t)strlen(text) };
+    }
+    uint8_t values[3][8] = {{0}};
+    values[0][0] = 1;
+    write_u16_be(values[1] + 2, g_mp4.trackno); write_u16_be(values[1] + 4, g_mp4.ntracks);
+    write_u16_be(values[2] + 2, g_mp4.discno); write_u16_be(values[2] + 4, g_mp4.ndiscs);
+    const uint32_t number_keys[] = { FAAM_METADATA_KEY_COMPILATION, FAAM_METADATA_KEY_TRACK, FAAM_METADATA_KEY_DISC };
+    const bool present[] = { g_mp4.compilation, g_mp4.trackno != 0, g_mp4.discno != 0 };
+    const uint32_t sizes[] = {1, 8, 8};
+    for (unsigned i = 0; i < 3; i++) if (present[i])
+        g_mp4.entries[g_mp4.num_metadata++] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry),
+            .key = number_keys[i], .data_type = i == 0 ? FAAM_METADATA_INTEGER : FAAM_METADATA_IMPLICIT,
+            .data = values[i], .data_bytes = sizes[i] };
+    if (g_mp4.cover.data && g_mp4.cover.size) {
+        uint8_t type = faam_detect_cover_type(g_mp4.cover.data, g_mp4.cover.size);
+        if (!type) return 1;
+        g_mp4.entries[g_mp4.num_metadata++] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry),
+            .key = FAAM_METADATA_KEY_COVER_ART, .data_type = type,
+            .data = g_mp4.cover.data, .data_bytes = g_mp4.cover.size };
+    }
+    for (uint32_t i = 0; i < g_mp4.customcnt; i++) g_mp4.entries[g_mp4.num_metadata++] = g_mp4.custom[i];
 
     faam_gapless_info gapless = {
         .struct_size = sizeof(gapless),
@@ -279,7 +293,9 @@ int mp4_finish(void) {
         .total_samples = g_mp4.gapless.original_samples,
     };
     faam_muxer_update_params update = { .struct_size = sizeof(update) };
-    update.flags = FAAM_UPDATE_CODEC_DATA | FAAM_UPDATE_LANGUAGE | FAAM_UPDATE_CREATION_TIME;
+    update.metadata = g_mp4.entries;
+    update.num_metadata = g_mp4.num_metadata;
+    update.flags = FAAM_UPDATE_METADATA | FAAM_UPDATE_CODEC_DATA | FAAM_UPDATE_LANGUAGE | FAAM_UPDATE_CREATION_TIME;
     update.track_id = MP4_TRACK_ID;
     update.codec_data = g_mp4.asc.data;
     update.codec_data_len = (uint32_t)g_mp4.asc.size;
@@ -302,8 +318,10 @@ int mp4_close(void) {
     reset_write_state();
     for (uint32_t i = 0; i < g_mp4.customcnt; i++) {
         free((void *)g_mp4.custom[i].name);
-        free((void *)g_mp4.custom[i].value);
+        free((void *)g_mp4.custom[i].data);
     }
+    free(g_mp4.entries);
+    g_mp4.entries = NULL;
     free(g_mp4.custom);
     g_mp4.custom = NULL;
     g_mp4.customcnt = 0;

@@ -52,8 +52,7 @@
 #include "help.h"
 #include "endian.h"
 #include "asc_codec.h"
-
-#define HAS(s) ((s) && (s)[0])
+#include "cover_art.h"
 
 static int g_verbose = 1;
 
@@ -109,8 +108,7 @@ static const help_t help_mux[] = {
     {"-o, --output <file>",
      "Output MP4 file (required); - streams fragmented MP4 when supported; --faststart, --brand m4b or gapless options use progressive MP4",
      "Progressive files are written by default. With stdout, FAAM uses one-second fragmented MP4 when supported; faststart, M4B branding or gapless metadata require progressive output, which is emitted after muxing finishes."},
-    {"-v <verbose>",
-     "Set verbosity level: -v0 is quiet; -v1 (default) shows status; -v2 adds detailed summaries where available.",
+    {"-v <verbose>", "Set verbosity level: -v0 is quiet; -v1 (default) shows status; -v2 adds detailed summaries where available.",
      "Status and progress are written to stderr when media is sent to stdout. Errors are always reported regardless of verbosity."},
     {"--overwrite",
      "Overwrite an existing output file",
@@ -187,7 +185,8 @@ static const help_t help_inspect[] = {
 };
 
 static const help_t help_tag[] = {
-    {"-v <verbose>", "Set verbosity level: -v0 is quiet; -v1 (default) shows status; -v2 adds detailed summaries where available.",
+    {"-v <verbose>",
+     "Set verbosity level: -v0 is quiet; -v1 (default) shows status; -v2 adds detailed summaries where available.",
      "The same verbosity setting applies to muxing and tag editing."},
     {"--title <text>", "Title", "Set the standard iTunes title field. Text is converted to UTF-8."},
     {"--titlesort <text>", "Title sort name", "Set the sort order text used by media libraries independently of the displayed title."},
@@ -201,21 +200,34 @@ static const help_t help_tag[] = {
     {"--composersort <text>", "Composer sort name", "Set the composer sort key independently of the displayed composer name."},
     {"--year <text>", "Year", "Set the release year as text."},
     {"--comment <text>", "Comment", "Set the standard iTunes comment field."},
+    {"--lyrics <text>", "Set plain, unsynchronized lyrics", "Text is converted to UTF-8 and line endings are normalized to LF. No timing information is added; use --lyrics-file to supply multiline text."},
+    {"--grouping <text>", "Set the grouping tag", "Text is converted to UTF-8."},
+    {"--copyright <text>", "Set the copyright tag", "Text is converted to UTF-8."},
+    {"--description <text>", "Set the description tag", "Text is converted to UTF-8."},
+    {"--long-description <text>", "Set the long description tag", "Text is converted to UTF-8."},
+    {"--work <text>", "Set the classical work name", "Text is converted to UTF-8."},
+    {"--movement <text>", "Set the classical movement name", "Text is converted to UTF-8."},
+    {"--bpm <0-65535>", "Set beats per minute", "Accepts an integer from 0 through 65535."},
+    {"--movement-number <0-65535>", "Set the movement number", "Accepts an integer from 0 through 65535."},
+    {"--movement-total <0-65535>", "Set the total number of movements", "Accepts an integer from 0 through 65535."},
+    {"--show-work-movement", "Enable work and movement display", "Sets the flag used by players to display classical work and movement names."},
+    {"--lyrics-file <file>", "Read lyrics from a UTF-8 file", "Accepts an optional UTF-8 BOM, normalizes CR, CRLF, and LF line endings to LF, preserves surrounding whitespace, and rejects invalid UTF-8 or NUL bytes. No timing synchronization is implied."},
     {"--genre <value>",
-     "ID3v1 genre number (0-255) or name; anything else is stored as free text",
-     "A recognized ID3v1 genre sets both the numeric genre atom and its text label. Other values are stored as text only."},
+     "ID3v1 genre number (0-191) or name; anything else is stored as free text",
+     "The genre is stored as its text name; setting it removes a numeric genre atom the file already has."},
     {"--compilation", "Mark as part of a compilation", "Sets the compilation flag on the MP4."},
     {"--track <n[/total]>", "Track number", "Optionally include the total track count after a slash, for example 3/12."},
     {"--disc <n[/total]>", "Disc number", "Optionally include the total disc count after a slash, for example 1/2."},
-    {"--cover-art <file>", "Cover image, GIF, JPEG or PNG",
+    {"--cover-art <file>", "Cover image, GIF, JPEG, PNG or BMP",
      "FAAM detects GIF, JPEG, PNG or BMP from the file contents. Cover art is limited to 32 MiB."},
     {"--tag <name=value>",
      "Custom tag, name and value separated by = or ,; repeat for more",
-     "The first '=' or ',' separates the name from the value. Both must be non-empty."},
+     "The first '=' or ',' separates the name from the value. Both must be non-empty. All CLI UTF-8 metadata text normalizes CR and CRLF line endings to LF."},
     {"--remove <field>",
      "tag only: remove a field before the other options apply: title, titlesort, artist, artistsort, "
      "album, albumsort, albumartist, albumartistsort, composer, composersort, year, comment, genre, "
-     "compilation, track, disc, cover-art or custom. Repeatable",
+     "compilation, track, disc, cover-art, custom, lyrics, grouping, copyright, description, "
+     "long-description, work, movement, bpm, movement-number, movement-total, show-work-movement, encoder or genre-code. Repeatable",
      "Removal runs before setting other supplied fields. The custom field removes all custom tags; at most 32 --remove options are accepted."},
     {"--clear",
      "tag only: remove every existing tag before the other options apply (drops all metadata, including preserved/unmodeled tags)",
@@ -321,7 +333,7 @@ static bool mux_stream_flush(void *user)
 
 static faam_io mux_stream_io(mux_stream_output *s)
 {
-    faam_io io = {0};
+    faam_io io = { .struct_size = sizeof(io) };
     io.struct_size = sizeof(io);
     io.user_data = s;
     io.write = mux_stream_write;
@@ -398,7 +410,19 @@ enum {
     OPT_DISC,
     OPT_COVER_ART,
     OPT_TAG,
-    OPT_TAG_LAST = OPT_TAG
+    OPT_LYRICS,
+    OPT_GROUPING,
+    OPT_COPYRIGHT,
+    OPT_DESCRIPTION,
+    OPT_LONG_DESCRIPTION,
+    OPT_WORK,
+    OPT_MOVEMENT,
+    OPT_BPM,
+    OPT_MOVEMENT_NUMBER,
+    OPT_MOVEMENT_TOTAL,
+    OPT_SHOW_WORK_MOVEMENT,
+    OPT_LYRICS_FILE,
+    OPT_TAG_LAST = OPT_LYRICS_FILE
 };
 
 #define FAAM_CLI_TITLE_MAX 256 /* title buffer incl. NUL; longer titles are truncated */
@@ -419,8 +443,8 @@ static bool output_refused(const char *path, bool overwrite)
     return true;
 }
 
-/* Owned UTF-8 copies of CLI strings; faam_metadata only borrows them, so they
- * must outlive the muxer or faam_update_tags_stream. argv text arrives in
+/* Owned UTF-8 copies of CLI strings; metadata entries only borrow them, so they
+ * must outlive the muxer or faam_update_metadata_stream. argv text arrives in
  * whatever the shell/locale handed us and iTunes atoms require UTF-8, hence
  * utf8_ensure(), as faac does for the same values. */
 typedef struct { char **v; size_t n; } owned_list;
@@ -445,34 +469,18 @@ static void owned_free(owned_list *l)
 
 /* Metadata being assembled from the tag options, shared by mux and tag. */
 typedef struct {
-    faam_metadata meta;
+    uint32_t num_metadata;
     owned_list owned;
-    uint8_t *cover;
-    faam_custom_tag *tags; /* meta.custom_tags; grows as tags are added, none are dropped */
-    uint32_t tags_cap;
+    faam_metadata_entry *entries;
+    uint32_t entries_cap;
+    uint16_t track_total, disc_total;
     bool given; /* some tag option was applied */
 } tag_ctx;
 
 static void tag_free(tag_ctx *t)
 {
-    free(t->cover);
-    free(t->tags);
+    free(t->entries);
     owned_free(&t->owned);
-    t->cover = NULL;
-    t->tags = NULL;
-}
-
-/* Room for one more custom tag after the num_custom_tags already in t->tags. */
-static bool tag_reserve(tag_ctx *t)
-{
-    if (t->meta.num_custom_tags < t->tags_cap) return true;
-    uint32_t cap = t->tags_cap ? t->tags_cap * 2 : 8;
-    faam_custom_tag *grown = (faam_custom_tag *)realloc(t->tags, cap * sizeof(*grown));
-    if (!grown) return false;
-    t->tags = grown;
-    t->tags_cap = cap;
-    t->meta.custom_tags = grown;
-    return true;
 }
 
 #define TAG_LONG_OPTIONS \
@@ -493,120 +501,248 @@ static bool tag_reserve(tag_ctx *t)
     {"track", required_argument, 0, OPT_TRACK}, \
     {"disc", required_argument, 0, OPT_DISC}, \
     {"cover-art", required_argument, 0, OPT_COVER_ART}, \
-    {"tag", required_argument, 0, OPT_TAG}
+    {"tag", required_argument, 0, OPT_TAG}, \
+    {"lyrics", required_argument, 0, OPT_LYRICS}, \
+    {"grouping", required_argument, 0, OPT_GROUPING}, \
+    {"copyright", required_argument, 0, OPT_COPYRIGHT}, \
+    {"description", required_argument, 0, OPT_DESCRIPTION}, \
+    {"long-description", required_argument, 0, OPT_LONG_DESCRIPTION}, \
+    {"work", required_argument, 0, OPT_WORK}, \
+    {"movement", required_argument, 0, OPT_MOVEMENT}, \
+    {"bpm", required_argument, 0, OPT_BPM}, \
+    {"movement-number", required_argument, 0, OPT_MOVEMENT_NUMBER}, \
+    {"movement-total", required_argument, 0, OPT_MOVEMENT_TOTAL}, \
+    {"show-work-movement", no_argument, 0, OPT_SHOW_WORK_MOVEMENT}, \
+    {"lyrics-file", required_argument, 0, OPT_LYRICS_FILE}
 
-static const char **tag_text_field(tag_ctx *t, int opt)
-{
-    switch (opt) {
-    case OPT_TITLE: return &t->meta.title;
-    case OPT_TITLE_SORT: return &t->meta.title_sort;
-    case OPT_ARTIST: return &t->meta.artist;
-    case OPT_ARTIST_SORT: return &t->meta.artist_sort;
-    case OPT_ALBUM: return &t->meta.album;
-    case OPT_ALBUM_SORT: return &t->meta.album_sort;
-    case OPT_ALBUM_ARTIST: return &t->meta.album_artist;
-    case OPT_ALBUM_ARTIST_SORT: return &t->meta.album_artist_sort;
-    case OPT_COMPOSER: return &t->meta.composer;
-    case OPT_COMPOSER_SORT: return &t->meta.composer_sort;
-    case OPT_YEAR: return &t->meta.year;
-    case OPT_COMMENT: return &t->meta.comment;
-    default: return NULL;
+/* CLI aliases describe atom keys; the library handles every key generically. */
+typedef struct { int opt; const char *name, *label; uint32_t key; unsigned width; } tag_alias;
+static const tag_alias tag_aliases[] = {
+    { OPT_TITLE, "title", "Title", FAAM_METADATA_KEY_TITLE, 0 },
+    { OPT_TITLE_SORT, "titlesort", "Title Sort", FAAM_METADATA_KEY_TITLE_SORT, 0 },
+    { OPT_ARTIST, "artist", "Artist", FAAM_METADATA_KEY_ARTIST, 0 },
+    { OPT_ARTIST_SORT, "artistsort", "Artist Sort", FAAM_METADATA_KEY_ARTIST_SORT, 0 },
+    { OPT_ALBUM, "album", "Album", FAAM_METADATA_KEY_ALBUM, 0 },
+    { OPT_ALBUM_SORT, "albumsort", "Album Sort", FAAM_METADATA_KEY_ALBUM_SORT, 0 },
+    { OPT_ALBUM_ARTIST, "albumartist", "Album Artist", FAAM_METADATA_KEY_ALBUM_ARTIST, 0 },
+    { OPT_ALBUM_ARTIST_SORT, "albumartistsort", "Album Artist Sort", FAAM_METADATA_KEY_ALBUM_ARTIST_SORT, 0 },
+    { OPT_COMPOSER, "composer", "Composer", FAAM_METADATA_KEY_COMPOSER, 0 },
+    { OPT_COMPOSER_SORT, "composersort", "Composer Sort", FAAM_METADATA_KEY_COMPOSER_SORT, 0 },
+    { OPT_YEAR, "year", "Year", FAAM_METADATA_KEY_YEAR, 0 },
+    { OPT_COMMENT, "comment", "Comment", FAAM_METADATA_KEY_COMMENT, 0 },
+    { OPT_GENRE, "genre", "Genre", FAAM_METADATA_KEY_GENRE, 0 },
+    { OPT_COMPILATION, "compilation", "Compilation", FAAM_METADATA_KEY_COMPILATION, 1 },
+    { OPT_TRACK, "track", "Track", FAAM_METADATA_KEY_TRACK, 8 },
+    { OPT_DISC, "disc", "Disc", FAAM_METADATA_KEY_DISC, 8 },
+    { OPT_COVER_ART, "cover-art", "Cover Art", FAAM_METADATA_KEY_COVER_ART, 0 },
+    { 0, "encoder", "Encoder", FAAM_METADATA_KEY_ENCODER, 0 },
+    { 0, "genre-code", "Genre Code", FAAM_METADATA_KEY_GENRE_CODE, 2 },
+    { OPT_LYRICS, "lyrics", "Lyrics", FAAM_METADATA_KEY_LYRICS, 0 },
+    { OPT_GROUPING, "grouping", "Grouping", FAAM_METADATA_KEY_GROUPING, 0 },
+    { OPT_COPYRIGHT, "copyright", "Copyright", FAAM_METADATA_KEY_COPYRIGHT, 0 },
+    { OPT_DESCRIPTION, "description", "Description", FAAM_METADATA_KEY_DESCRIPTION, 0 },
+    { OPT_LONG_DESCRIPTION, "long-description", "Long Description", FAAM_METADATA_KEY_LONG_DESCRIPTION, 0 },
+    { OPT_WORK, "work", "Work", FAAM_METADATA_KEY_WORK, 0 },
+    { OPT_MOVEMENT, "movement", "Movement", FAAM_METADATA_KEY_MOVEMENT, 0 },
+    { OPT_BPM, "bpm", "BPM", FAAM_METADATA_KEY_BPM, 2 },
+    { OPT_MOVEMENT_NUMBER, "movement-number", "Movement Number", FAAM_METADATA_KEY_MOVEMENT_NUMBER, 2 },
+    { OPT_MOVEMENT_TOTAL, "movement-total", "Movement Total", FAAM_METADATA_KEY_MOVEMENT_TOTAL, 2 },
+    { OPT_SHOW_WORK_MOVEMENT, "show-work-movement", "Show Work/Movement", FAAM_METADATA_KEY_SHOW_WORK_MOVEMENT, 1 },
+};
+
+static const tag_alias *tag_alias_find(int opt, const char *name) {
+    for (size_t i = 0; i < sizeof(tag_aliases) / sizeof(tag_aliases[0]); i++)
+        if (name ? !strcmp(tag_aliases[i].name, name) : tag_aliases[i].opt == opt) return &tag_aliases[i];
+    return NULL;
+}
+
+/* The CLI canonicalizes all text tag values to LF for platform-independent
+ * files. The public library API remains byte-preserving. */
+static size_t normalize_text_line_endings(uint8_t *out, const uint8_t *input, size_t len) {
+    size_t output_len = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (input[i] == '\r') {
+            out[output_len++] = '\n';
+            if (i + 1 < len && input[i + 1] == '\n') i++;
+        } else {
+            out[output_len++] = input[i];
+        }
+    }
+    return output_len;
+}
+
+static const char *tag_value_set(tag_ctx *t, uint32_t key, uint32_t type,
+                                  const char *mean, const char *name,
+                                  const void *data, size_t len, bool remove) {
+    if (len > UINT32_MAX - 24) return "Metadata value is too large.\n";
+    char *copy = NULL;
+    if (!remove) {
+        copy = (char *)malloc(len + 1);
+        char **grown = copy ? realloc(t->owned.v, (t->owned.n + 1) * sizeof(*grown)) : NULL;
+        if (!grown) { free(copy); return "Out of memory.\n"; }
+        size_t copy_len = len;
+        if (type == FAAM_METADATA_UTF8)
+            copy_len = normalize_text_line_endings((uint8_t *)copy, data, len);
+        else if (len)
+            memcpy(copy, data, len);
+        copy[copy_len] = 0;
+        t->owned.v = grown; t->owned.v[t->owned.n++] = copy;
+        len = copy_len;
+    }
+    uint32_t index = 0;
+    while (index < t->num_metadata) {
+        const faam_metadata_entry *e = &t->entries[index];
+        if (e->key == key && (!name || (e->name && !strcmp(e->name, name) &&
+            !strcmp(e->mean ? e->mean : "com.apple.iTunes", mean ? mean : "com.apple.iTunes")))) break;
+        index++;
+    }
+    if (index == t->num_metadata) {
+        if (index == t->entries_cap) {
+            size_t cap = t->entries_cap ? (size_t)t->entries_cap * 2 : 16;
+            if (cap > UINT32_MAX || cap > SIZE_MAX / sizeof(*t->entries)) return "Too many metadata entries.\n";
+            faam_metadata_entry *grown = realloc(t->entries, (size_t)cap * sizeof(*grown));
+            if (!grown) return "Out of memory.\n";
+            t->entries = grown; t->entries_cap = (uint32_t)cap;
+        }
+        t->num_metadata++;
+    }
+    t->entries[index] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry),
+        .key = key, .data_type = type, .mean = mean, .name = name,
+        .data = copy, .data_bytes = (uint32_t)len, .flags = remove ? FAAM_METADATA_REMOVE : 0 };
+    return NULL;
+}
+
+static const char *tag_entry_set(tag_ctx *t, const tag_alias *alias,
+                                  const void *data, size_t len, bool remove) {
+    return tag_value_set(t, alias->key, alias->width ? FAAM_METADATA_INTEGER : FAAM_METADATA_UTF8,
+                         NULL, NULL, data, len, remove);
+}
+
+/* Strict, length-aware UTF-8 validation for lyrics files. NUL cannot be text. */
+static bool lyrics_utf8_valid(const uint8_t *s, size_t len) {
+    for (size_t i = 0; i < len;) {
+        uint32_t c = s[i++], min = 0;
+        unsigned more = 0;
+        if (!c) return false;
+        if (c < 0x80) continue;
+        if (c >= 0xc2 && c <= 0xdf) { more = 1; min = 0x80; c &= 0x1f; }
+        else if (c >= 0xe0 && c <= 0xef) { more = 2; min = 0x800; c &= 0xf; }
+        else if (c >= 0xf0 && c <= 0xf4) { more = 3; min = 0x10000; c &= 7; }
+        else return false;
+        if (len - i < more) return false;
+        while (more--) {
+            if ((s[i] & 0xc0) != 0x80) return false;
+            c = (c << 6) | (s[i++] & 0x3f);
+        }
+        if (c < min || c > 0x10ffff || (c >= 0xd800 && c <= 0xdfff)) return false;
+    }
+    return true;
+}
+
+static const char *tag_lyrics_file(tag_ctx *t, const char *path) {
+    FILE *f = cli_fopen(path, "rb");
+    if (!f) return "Cannot open lyrics file.\n";
+    uint8_t *data = NULL;
+    size_t len = 0;
+    bool ok = cli_read_all(f, INT32_MAX - 24, &data, &len);
+    fclose(f);
+    if (!ok) return "Cannot read lyrics file (I/O error, too large, or out of memory).\n";
+    size_t start = len >= 3 && !memcmp(data, "\xef\xbb\xbf", 3) ? 3 : 0;
+    const char *err = lyrics_utf8_valid(data + start, len - start) ?
+        tag_entry_set(t, tag_alias_find(OPT_LYRICS, NULL), data + start, len - start, false) :
+        "Lyrics file must be valid UTF-8 without NUL bytes.\n";
+    free(data);
+    return err;
+}
+
+static void print_metadata_text(const char *label, const void *data, uint32_t length) {
+    const uint8_t *p = data;
+    printf("  %s:", label);
+    if (memchr(data, '\n', length) || memchr(data, '\r', length)) {
+        printf("\n    ");
+        for (uint32_t i = 0; i < length; i++) {
+            if (p[i] == '\r' || p[i] == '\n') {
+                /* Render CR, LF, and CRLF as one host-native line break. */
+                if (p[i] == '\r' && i + 1 < length && p[i + 1] == '\n') i++;
+                putchar('\n');
+                if (i + 1 < length) printf("    ");
+                continue;
+            }
+            putchar(p[i]);
+        }
+        if (!length || (p[length - 1] != '\n' && p[length - 1] != '\r')) putchar('\n');
+    } else {
+        putchar(' ');
+        if (length) fwrite(data, 1, length, stdout);
+        putchar('\n');
     }
 }
 
-/* Applies one tag option on top of what t already holds. Returns NULL, or the
- * message to print (newline-terminated; those shared with faac read the same). */
+/* All CLI conveniences produce the same generic public metadata entries. */
 static const char *tag_apply(tag_ctx *t, int opt, char *arg)
 {
-    faam_metadata *meta = &t->meta;
-    const char **text = tag_text_field(t, opt);
-
     t->given = true;
-    if (text) {
-        const char *v = own_utf8(&t->owned, trim_quotes_and_spaces(arg));
-        if (!v) return "Out of memory.\n";
-        *text = v;
-        return NULL;
-    }
-
-    switch (opt) {
-    case OPT_COMPILATION:
-        meta->compilation = true;
-        return NULL;
-    case OPT_GENRE: {
-        /* Same parsing as faac: a name or number picks the ID3v1 genre and its text;
-           anything else is free text with no numeric atom, which also replaces a
-           stale numeric genre when updating a file. */
-        uint16_t code = 0;
-        const char *name = NULL;
-        if (!parse_genre(trim_quotes_and_spaces(arg), &code, &name))
-            return "Genre number out of range.\n";
-        meta->genre_code = code;
-        meta->genre_str = name ? own_utf8(&t->owned, name) : NULL;
-        return NULL;
-    }
-    case OPT_TRACK:
-        return parse_index_arg(arg, &meta->track_num, &meta->track_total) ? NULL : "Wrong track number.\n";
-    case OPT_DISC:
-        return parse_index_arg(arg, &meta->disc_num, &meta->disc_total) ? NULL : "Wrong disc number.\n";
-    case OPT_COVER_ART: {
-        uint8_t *art = NULL;
-        uint64_t size = 0;
-        const char *err = load_cover_art(arg, &art, &size);
-        if (err) return err;
-        free(t->cover);
-        t->cover = art;
-        meta->cover_art = art;
-        meta->cover_bytes = (uint32_t)size;
-        meta->cover_type = FAAM_COVER_AUTO;
-        return NULL;
-    }
-    case OPT_TAG: {
+    if (opt == OPT_LYRICS_FILE) return tag_lyrics_file(t, arg);
+    const tag_alias *alias = tag_alias_find(opt, NULL);
+    if (opt == OPT_TAG) {
         char *name = NULL, *value = NULL;
         const char *err = parse_tag_arg(arg, &name, &value);
         if (err) return err;
-        if (!tag_reserve(t)) return "Couldn't add tag (out of memory).\n";
-        /* The name lands in the same atom as the value, so both get the same treatment. */
-        const char *n = own_utf8(&t->owned, name);
-        const char *v = own_utf8(&t->owned, value);
-        if (!n || !v) return "Couldn't add tag (out of memory).\n";
-        t->tags[meta->num_custom_tags].struct_size = sizeof(faam_custom_tag);
-        t->tags[meta->num_custom_tags].mean = NULL;
-        t->tags[meta->num_custom_tags].name = n;
-        t->tags[meta->num_custom_tags].value = v;
-        meta->num_custom_tags++;
-        return NULL;
+        const char *n = own_utf8(&t->owned, name), *v = own_utf8(&t->owned, value);
+        if (!n || !v) return "Out of memory.\n";
+        return tag_value_set(t, FAAM_METADATA_KEY_FREEFORM, FAAM_METADATA_UTF8,
+                             NULL, n, v, strlen(v), false);
     }
-    default:
-        return "Error: unknown tag option.\n";
+    if (!alias) return "Unknown metadata option.\n";
+    if (opt == OPT_COVER_ART) {
+        uint8_t *data = NULL;
+        uint64_t size = 0;
+        const char *err = load_cover_art(arg, &data, &size);
+        if (err) return err;
+        err = tag_value_set(t, alias->key, faam_detect_cover_type(data, (uint32_t)size),
+                            NULL, NULL, data, (size_t)size, false);
+        free(data);
+        return err;
     }
+    if (opt == OPT_GENRE) {
+        const char *name = NULL;
+        if (!parse_genre(trim_quotes_and_spaces(arg), &name)) return "Genre number out of range.\n";
+        /* The text atom is the one every player reads. A numeric atom already in the file is removed
+         * so the two cannot disagree. */
+        const char *err = tag_value_set(t, FAAM_METADATA_KEY_GENRE_CODE, FAAM_METADATA_IMPLICIT,
+                                        NULL, NULL, NULL, 0, true);
+        if (err) return err;
+        const char *v = own_utf8(&t->owned, name);
+        if (!v) return "Out of memory.\n";
+        return tag_entry_set(t, alias, v, strlen(v), false);
+    }
+    if (opt == OPT_TRACK || opt == OPT_DISC) {
+        uint16_t num = 0, total = opt == OPT_TRACK ? t->track_total : t->disc_total;
+        /* A bare number keeps the existing total; cmd_tag seeds it. */
+        for (uint32_t i = 0; i < t->num_metadata; i++) {
+            const faam_metadata_entry *e = &t->entries[i];
+            if (e->key == alias->key && e->data_bytes >= 6) total = read_u16_be((const uint8_t *)e->data + 4);
+        }
+        if (!parse_index_arg(arg, &num, &total))
+            return opt == OPT_TRACK ? "Wrong track number.\n" : "Wrong disc number.\n";
+        if (opt == OPT_TRACK) t->track_total = total; else t->disc_total = total;
+        uint8_t bytes[8] = {0}; write_u16_be(bytes + 2, num); write_u16_be(bytes + 4, total);
+        return tag_value_set(t, alias->key, FAAM_METADATA_IMPLICIT, NULL, NULL,
+                             num ? bytes : NULL, num ? 8 : 0, !num);
+    }
+    if (alias->width) {
+        unsigned long long value = 1;
+        if (alias->width != 1 && !cli_parse_uint(arg, UINT16_MAX, &value))
+            return "Metadata number must be an integer from 0 to 65535.\n";
+        uint8_t bytes[2]; write_u16_be(bytes, (uint16_t)value);
+        return tag_entry_set(t, alias, bytes + (2 - alias->width), alias->width, false);
+    }
+    const char *v = own_utf8(&t->owned, opt == OPT_LYRICS ? arg : trim_quotes_and_spaces(arg));
+    return v ? tag_entry_set(t, alias, v, strlen(v), false) : "Out of memory.\n";
 }
 
-/* --remove field names: the small, CLI-facing subset that maps to a single
- * scalar/pointer field. Sort tags and multi-part fields (track/disc) are
- * addressable too since they're just as easy to zero individually. */
-static bool remove_metadata_field(faam_metadata *meta, const char *name)
-{
-    if (!strcmp(name, "title")) meta->title = NULL;
-    else if (!strcmp(name, "titlesort")) meta->title_sort = NULL;
-    else if (!strcmp(name, "artistsort")) meta->artist_sort = NULL;
-    else if (!strcmp(name, "artist")) meta->artist = NULL;
-    else if (!strcmp(name, "albumsort")) meta->album_sort = NULL;
-    else if (!strcmp(name, "albumartistsort")) meta->album_artist_sort = NULL;
-    else if (!strcmp(name, "albumartist")) meta->album_artist = NULL;
-    else if (!strcmp(name, "album")) meta->album = NULL;
-    else if (!strcmp(name, "composersort")) meta->composer_sort = NULL;
-    else if (!strcmp(name, "composer")) meta->composer = NULL;
-    else if (!strcmp(name, "year")) meta->year = NULL;
-    else if (!strcmp(name, "comment")) meta->comment = NULL;
-    else if (!strcmp(name, "genre")) { meta->genre_str = NULL; meta->genre_code = 0; }
-    else if (!strcmp(name, "compilation")) meta->compilation = false;
-    else if (!strcmp(name, "track")) { meta->track_num = 0; meta->track_total = 0; }
-    else if (!strcmp(name, "disc")) { meta->disc_num = 0; meta->disc_total = 0; }
-    else if (!strcmp(name, "cover-art")) { meta->cover_art = NULL; meta->cover_bytes = 0; }
-    else if (!strcmp(name, "custom")) meta->num_custom_tags = 0;
-    else return false;
-    return true;
+static bool metadata_remove_valid(const char *name) {
+    return tag_alias_find(0, name) || !strcmp(name, "custom");
 }
 
 static int cmd_info(int argc, char **argv)
@@ -714,45 +850,25 @@ static int cmd_info(int argc, char **argv)
             printf("  Total Frames: %u\n", ti.total_frames);
     }
 
-    faam_metadata meta;
-    memset(&meta, 0, sizeof(meta));
-    meta.struct_size = sizeof(meta);
-    if (faam_demuxer_get_metadata(d, &meta) == FAAM_OK) {
-        bool has_any = HAS(meta.title) || HAS(meta.title_sort) || HAS(meta.artist) || HAS(meta.artist_sort) ||
-                       HAS(meta.album) || HAS(meta.album_sort) || HAS(meta.album_artist) || HAS(meta.album_artist_sort) ||
-                       HAS(meta.composer) || HAS(meta.composer_sort) || HAS(meta.year) || HAS(meta.comment) ||
-                       meta.genre_code || HAS(meta.genre_str) || meta.compilation || meta.track_num ||
-                       meta.disc_num || meta.cover_bytes > 0 || meta.num_custom_tags > 0;
-        if (has_any) {
-            printf("\nMetadata Tags:\n");
-            if (HAS(meta.title)) printf("  Title: %s\n", meta.title);
-            if (HAS(meta.title_sort)) printf("  Title Sort: %s\n", meta.title_sort);
-            if (HAS(meta.artist)) printf("  Artist: %s\n", meta.artist);
-            if (HAS(meta.artist_sort)) printf("  Artist Sort: %s\n", meta.artist_sort);
-            if (HAS(meta.album)) printf("  Album: %s\n", meta.album);
-            if (HAS(meta.album_sort)) printf("  Album Sort: %s\n", meta.album_sort);
-            if (HAS(meta.album_artist)) printf("  Album Artist: %s\n", meta.album_artist);
-            if (HAS(meta.album_artist_sort)) printf("  Album Artist Sort: %s\n", meta.album_artist_sort);
-            if (HAS(meta.composer)) printf("  Composer: %s\n", meta.composer);
-            if (HAS(meta.composer_sort)) printf("  Composer Sort: %s\n", meta.composer_sort);
-            if (HAS(meta.genre_str)) printf("  Genre: %s\n", meta.genre_str);
-            else if (meta.genre_code) printf("  Genre: #%u\n", meta.genre_code - 1);
-            if (HAS(meta.year)) printf("  Year: %s\n", meta.year);
-            if (HAS(meta.comment)) printf("  Comment: %s\n", meta.comment);
-            if (meta.compilation) printf("  Compilation: Yes\n");
-            if (meta.track_num) printf("  Track: %u/%u\n", meta.track_num, meta.track_total);
-            if (meta.disc_num) printf("  Disc: %u/%u\n", meta.disc_num, meta.disc_total);
-            if (meta.cover_bytes > 0) printf("  Cover Art: present (%u bytes)\n", meta.cover_bytes);
-            if (meta.num_custom_tags > 0) {
-                printf("  Custom Tags (%u):\n", meta.num_custom_tags);
-                for (uint32_t i = 0; i < meta.num_custom_tags; i++) {
-                    faam_custom_tag tag;
-                    memset(&tag, 0, sizeof(tag));
-                    tag.struct_size = sizeof(tag);
-                    if (faam_demuxer_get_custom_tag(d, i, &tag) == FAAM_OK)
-                        printf("    %s = %s\n", tag.name, tag.value);
-                }
-            }
+    uint32_t meta_count = 0;
+    if (faam_demuxer_get_num_metadata(d, &meta_count) == FAAM_OK && meta_count) {
+        printf("\nMetadata Tags:\n");
+        for (uint32_t i = 0; i < meta_count; i++) {
+            faam_metadata_entry e = { .struct_size = sizeof(e) };
+            if (faam_demuxer_get_metadata_entry(d, i, &e) != FAAM_OK) continue;
+            const tag_alias *a = NULL;
+            for (size_t j = 0; j < sizeof(tag_aliases) / sizeof(tag_aliases[0]); j++)
+                if (tag_aliases[j].key == e.key) { a = &tag_aliases[j]; break; }
+            const uint8_t *v = e.data;
+            if (e.key == FAAM_METADATA_KEY_COVER_ART)
+                printf("  Cover Art: present (%u bytes, type %u)\n", e.data_bytes, e.data_type);
+            else if (a && a->width == 8 && e.data_bytes >= 6)
+                printf("  %s: %u/%u\n", a->label, read_u16_be(v + 2), read_u16_be(v + 4));
+            else if (a && a->width && e.data_bytes == a->width)
+                printf("  %s: %u\n", a->label, a->width == 1 ? v[0] : read_u16_be(v));
+            else if (e.data_type == FAAM_METADATA_UTF8)
+                print_metadata_text(e.name ? e.name : a ? a->label : "Text", e.data, e.data_bytes);
+            else printf("  Atom 0x%08x: type %u, locale %u, %u bytes\n", e.key, e.data_type, e.locale, e.data_bytes);
         }
     }
 
@@ -1114,7 +1230,6 @@ static int cmd_mux(int argc, char **argv)
     size_t vbuf_len_store[FAAM_MUX_MAX_TRACKS] = {0};
 
     memset(&tags, 0, sizeof(tags));
-    tags.meta.struct_size = sizeof(tags.meta);
 
     /* --codec:N (ffmpeg-style stream-indexed option) can't be expressed in
      * a static getopt_long table, so pull "--codec:N <value>" pairs out of
@@ -1402,7 +1517,7 @@ static int cmd_mux(int argc, char **argv)
     }
     if (g_verbose > 0 && time_warn[0]) fprintf(stderr, "Warning: %s", time_warn);
 
-    if (tags.given) cfg.metadata = &tags.meta;
+    if (tags.given) { cfg.metadata = tags.entries; cfg.num_metadata = tags.num_metadata; }
 
     cfg.tracks = tc;
     cfg.num_tracks = (uint32_t)num_inputs;
@@ -1792,9 +1907,7 @@ static int cmd_tag(int argc, char **argv)
 {
     const char *filepath = NULL;
     tag_ctx t;
-    faam_metadata *meta = &t.meta;
     memset(&t, 0, sizeof(t));
-    meta->struct_size = sizeof(*meta);
 
     bool want_clear = false;
     char remove_names[FAAM_TAG_MAX_REMOVE][32];
@@ -1816,7 +1929,6 @@ static int cmd_tag(int argc, char **argv)
      * where they happen to fall in argv relative to the value-setting flags. */
     {
         int opt;
-        faam_metadata scratch;
         int saved_opterr = opterr;
         opterr = 0;
         optind = 1;
@@ -1827,8 +1939,7 @@ static int cmd_tag(int argc, char **argv)
             else if (opt == OPT_CLEAR) {
                 want_clear = true;
             } else if (opt == OPT_REMOVE) {
-                memset(&scratch, 0, sizeof(scratch));
-                if (!remove_metadata_field(&scratch, optarg)) {
+                if (!metadata_remove_valid(optarg)) {
                     fprintf(stderr, "Error: unknown --remove field \"%s\"\n", optarg);
                     return 1;
                 }
@@ -1861,11 +1972,10 @@ static int cmd_tag(int argc, char **argv)
     faam_io io = cli_faam_io(f);
 
     if (!want_clear) {
-        /* The rewrite replaces the whole tag list, so what is kept is only as good as this read:
-         * any failure here must stop, not carry on with an empty list. */
+        /* Validate the file and collect totals/freeform keys needed by CLI conveniences. */
         uint32_t num_tracks = 0;
         faam_status rd;
-        /* Kept open until the update: the metadata strings are borrowed from it. */
+        /* Namespace/name pointers for custom removals are borrowed until the update. */
         rd = faam_demuxer_open(NULL, &io, &d);
         if (rd != FAAM_OK) {
             fprintf(stderr, "Error reading the existing tags of %s: %s (nothing was changed)\n", filepath, faam_strerror(rd));
@@ -1876,35 +1986,35 @@ static int cmd_tag(int argc, char **argv)
             fprintf(stderr, "Error: %s has no tracks; it is not an MP4 file this tool can tag (nothing was changed)\n", filepath);
             goto done;
         }
-        rd = faam_demuxer_get_metadata(d, meta);
-        if (rd != FAAM_OK) {
-            fprintf(stderr, "Error reading the existing tags of %s: %s (nothing was changed)\n", filepath, faam_strerror(rd));
-            goto done;
-        }
-        /* Copied out of the demuxer's array so added tags can extend it. */
-        uint32_t count = meta->num_custom_tags;
-        meta->num_custom_tags = 0;
-        meta->custom_tags = NULL;
-        for (uint32_t i = 0; i < count; i++) {
-            if (!tag_reserve(&t)) {
-                fprintf(stderr, "Couldn't keep the existing tags (out of memory).\n");
-                goto done;
-            }
-            faam_custom_tag *slot = &t.tags[meta->num_custom_tags];
-            memset(slot, 0, sizeof(*slot));
-            slot->struct_size = sizeof(*slot);
-            if (faam_demuxer_get_custom_tag(d, i, slot) != FAAM_OK) {
-                fprintf(stderr, "Error reading the existing tags of %s (nothing was changed)\n", filepath);
-                goto done;
-            }
-            meta->num_custom_tags++;
+        /* Preserve existing totals when --track/--disc supply only a number. */
+        uint32_t existing_count = 0;
+        rd = faam_demuxer_get_num_metadata(d, &existing_count);
+        if (rd != FAAM_OK) goto done;
+        bool remove_custom = false;
+        for (int j = 0; j < num_remove; j++) if (!strcmp(remove_names[j], "custom")) remove_custom = true;
+        for (uint32_t i = 0; i < existing_count; i++) {
+            faam_metadata_entry e = { .struct_size = sizeof(e) };
+            if (faam_demuxer_get_metadata_entry(d, i, &e) != FAAM_OK) goto done;
+            if (e.data_bytes >= 6 && e.key == FAAM_METADATA_KEY_TRACK) t.track_total = read_u16_be((const uint8_t *)e.data + 4);
+            if (e.data_bytes >= 6 && e.key == FAAM_METADATA_KEY_DISC) t.disc_total = read_u16_be((const uint8_t *)e.data + 4);
+            bool custom = remove_custom && e.key == FAAM_METADATA_KEY_FREEFORM &&
+                !(e.name && !strcmp(e.name, "iTunSMPB") && (!e.mean || !strcmp(e.mean, "com.apple.iTunes")));
+            const char *err = NULL;
+            if (custom) err = tag_value_set(&t, e.key, e.data_type, e.mean, e.name, NULL, 0, true);
+            if (err) { fprintf(stderr, "%s", err); goto done; }
         }
     }
+    for (int i = 0; i < num_remove; i++) {
+        if (!strcmp(remove_names[i], "track")) t.track_total = 0;
+        if (!strcmp(remove_names[i], "disc")) t.disc_total = 0;
+        const tag_alias *alias = tag_alias_find(0, remove_names[i]);
+        const char *err = alias ? tag_entry_set(&t, alias, NULL, 0, true) : NULL;
+        if (!err && !strcmp(remove_names[i], "genre"))
+            err = tag_entry_set(&t, tag_alias_find(0, "genre-code"), NULL, 0, true);
+        if (err) { fprintf(stderr, "%s", err); goto done; }
+    }
 
-    for (int i = 0; i < num_remove; i++) remove_metadata_field(meta, remove_names[i]);
-
-    /* Pass 2: apply every value-setting flag on top of the (possibly
-     * existing, possibly cleared) base metadata. */
+    /* Pass 2: value setters override earlier removals in the patch. */
     const char *err_msg = NULL;
     int opt;
     optind = 1;
@@ -1925,7 +2035,7 @@ static int cmd_tag(int argc, char **argv)
         goto done;
     }
 
-    faam_status st = faam_update_tags_stream(&io, meta, want_clear ? FAAM_TAG_UPDATE_CLEAR : 0);
+    faam_status st = faam_update_metadata_stream(&io, t.entries, t.num_metadata, want_clear ? FAAM_METADATA_UPDATE_CLEAR : 0);
     if (st != FAAM_OK) {
         fprintf(stderr, "Error updating tags on %s: %s\n", filepath, faam_strerror(st));
         goto done;

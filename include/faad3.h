@@ -26,11 +26,16 @@
  *     to a human-readable string.
  *   - Fixed-width integer types and width-pinned enums preserve the ABI within
  *     each target platform, including builds using -fshort-enums.
- *   - faad_config and the info structs grow only by appending named fields;
+ *   - faad_config and the info structs support size-based extension;
  *     callers MUST set struct_size (faad_config_init() does) so the library
  *     can reconcile versions. Existing offsets, meanings, enum values, and
  *     signatures and struct alignment never change within a released major ABI
- *     version. Explicit tail padding is never reused for new fields.
+ *     version. Appended fields start at or after the previous sizeof(struct);
+ *     compiler padding is never reused and baseline sizes stay fixed.
+ *     Explicit reserved fields must be zero on input and are zero on output until
+ *     assigned a future meaning. They may be reused with their storage and offsets
+ *     preserved and zero retaining the previous behavior. Callers must check library
+ *     support before requesting new behavior.
  *   - Independent handles may be used concurrently; one handle is owned by
  *     one thread at a time. Instrumented stats builds are process-global.
  */
@@ -108,7 +113,7 @@ typedef struct faad_library_info {
     uint32_t                max_channels;   /* highest channel count this build decodes */
     bool                    sbr_supported;  /* SBR compiled in                          */
     bool                    ps_supported;   /* Parametric Stereo compiled in            */
-    uint8_t                 reserved[2];    /* explicit tail padding; always zero, never reuse */
+    uint8_t                 reserved[2];    /* reserved for future use; currently zero */
 } faad_library_info;
 
 FAADAPI faad_status faad_get_library_info(faad_library_info *out);
@@ -160,7 +165,7 @@ typedef struct faad_config {
     uint8_t                 drc_cut;          /* attenuation scale, 0..127 */
     uint8_t                 drc_boost;        /* boost scale, 0..127 */
     uint8_t                 drc_target_level; /* 0 off, else 40..127 quarter-dB below FS */
-    uint8_t                 reserved[1];     /* always zero, never reuse */
+    uint8_t                 reserved[1];     /* reserved for future use; currently zero */
 } faad_config;
 
 /*
@@ -184,10 +189,10 @@ typedef struct faad_stream_info {
     uint32_t                max_output_bytes; /* Lifetime PCM capacity, including implicit SBR/PS */
     uint32_t                channel_mask;     /* WAVE speaker mask; 0 for unknown layout */
     bool                    format_known;     /* Usable rate/channel snapshot; later frames may change it */
-    uint8_t                 reserved[3];      /* explicit tail padding; always zero, never reuse */
+    uint8_t                 reserved[3];      /* reserved for future use; currently zero */
     uint8_t                 prog_ref_level;  /* quarter-dB below full scale */
     bool                    prog_ref_level_present;
-    uint8_t                 reserved_drc[2]; /* always zero, never reuse */
+    uint8_t                 reserved_drc[2]; /* reserved for future use; currently zero */
 } faad_stream_info;
 
 enum faad_frame_flag {

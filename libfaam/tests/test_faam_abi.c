@@ -18,6 +18,7 @@
  * late configuration, serialized video fields and status contracts.
  */
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,23 +29,29 @@
 _Static_assert(sizeof(enum faam_feature) == 4, "feature enum width");
 _Static_assert(sizeof(enum faam_track_flag) == 4, "track_flag enum width");
 _Static_assert(sizeof(enum faam_track_info_flag) == 4, "track_info_flag enum width");
-_Static_assert(sizeof(enum faam_cover_type) == 4, "cover_type enum width");
+_Static_assert(sizeof(enum faam_metadata_data_type) == 4, "metadata_data_type enum width");
+_Static_assert(sizeof(enum faam_metadata_entry_flag) == 4, "metadata_entry_flag enum width");
 _Static_assert(sizeof(enum faam_muxer_flag) == 4, "muxer_flag enum width");
 _Static_assert(sizeof(enum faam_update_flag) == 4, "update_flag enum width");
 _Static_assert(sizeof(enum faam_frame_flag) == 4, "frame_flag enum width");
-_Static_assert(sizeof(enum faam_tag_update_flag) == 4, "tag_update_flag enum width");
+_Static_assert(sizeof(enum faam_metadata_update_flag) == 4, "metadata_update_flag enum width");
 _Static_assert(FAAM_FEATURE_VIDEO == 1 && FAAM_FEATURE_FRAGMENTED == 2, "feature values");
 _Static_assert(FAAM_TRACK_ANNEXB == 1 && FAAM_TRACK_INBAND_PARAMS == 2, "track values");
 _Static_assert(FAAM_TRACK_INFO_INBAND_PARAMS == 1, "track info values");
-_Static_assert(FAAM_COVER_AUTO == 0 && FAAM_COVER_JPEG == 1 && FAAM_COVER_PNG == 2
-               && FAAM_COVER_GIF == 3 && FAAM_COVER_BMP == 4, "cover values");
+_Static_assert(FAAM_METADATA_IMPLICIT == 0 && FAAM_METADATA_UTF8 == 1 && FAAM_METADATA_UTF16 == 2
+               && FAAM_METADATA_GIF == 12 && FAAM_METADATA_JPEG == 13 && FAAM_METADATA_PNG == 14
+               && FAAM_METADATA_INTEGER == 21 && FAAM_METADATA_BMP == 27, "metadata data type values");
 _Static_assert(FAAM_MUXER_M4B == 1 && FAAM_MUXER_CONSTANT_RATE == 2, "muxer values");
 _Static_assert(FAAM_UPDATE_CREATION_TIME == 1 && FAAM_UPDATE_GAPLESS == 2
                && FAAM_UPDATE_CODEC_DATA == 4 && FAAM_UPDATE_LANGUAGE == 8
-               && FAAM_UPDATE_AUDIO_SAMPLE_SIZE == 16, "update values");
-_Static_assert(FAAM_FRAME_KEYFRAME == 1 && FAAM_TAG_UPDATE_CLEAR == 1, "operation values");
-_Static_assert(sizeof(((faam_metadata *)0)->cover_type) == 1, "cover storage width");
+               && FAAM_UPDATE_METADATA == 16, "update values");
+_Static_assert(FAAM_FRAME_KEYFRAME == 1 && FAAM_METADATA_UPDATE_CLEAR == 1 && FAAM_METADATA_REMOVE == 1, "operation values");
 _Static_assert(sizeof(((faam_track_config *)0)->flags) == 4, "mask storage width");
+
+_Static_assert(offsetof(faam_io, reserved0) == 4 && offsetof(faam_io, user_data) == 8, "io layout");
+_Static_assert(offsetof(faam_muxer_config, num_metadata) == 24 && offsetof(faam_muxer_config, tracks) == 32, "config layout");
+_Static_assert(offsetof(faam_muxer_update_params, num_metadata) == 20 && offsetof(faam_muxer_update_params, codec_data) == 32, "update layout");
+_Static_assert(FAAM_MUXER_UPDATE_PARAMS_BASELINE == FAAM_STRUCT_END(faam_muxer_update_params, metadata), "update baseline");
 
 #define CHECK(c) do { if (!(c)) { \
     fprintf(stderr, "%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
@@ -89,7 +96,7 @@ static bool mem_seek(void *user, uint64_t pos) {
 static uint64_t mem_tell(void *user) { return ((memfile *)user)->pos; }
 
 static faam_io mem_io(memfile *f) {
-    faam_io io = { sizeof(faam_io), f, mem_read, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = f, .read = mem_read, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     return io;
 }
 
@@ -147,26 +154,28 @@ static void finish(faam_muxer **m) {
     out.v.struct_size = sizeof(T) + 32; STATUS(call, FAAM_OK); \
     CHECK(out.v.struct_size == sizeof(T) + 32); \
     for (unsigned k = 0; k < 32; k++) CHECK(out.guard[k] == 0xA5); \
-    out.v.struct_size = (baseline) - 1; STATUS(call, FAAM_ERR_INVALID_ARG); \
-    out.v.struct_size = 0; STATUS(call, FAAM_ERR_INVALID_ARG); \
+    out.v.struct_size = (baseline) - 1; STATUS(call, FAAM_ERR_INVALID_ARGUMENT); \
+    out.v.struct_size = 0; STATUS(call, FAAM_ERR_INVALID_ARGUMENT); \
 } while (0)
 
 static void test_outputs(void) {
     memfile f = {0}; faam_track_config t = audio();
-    faam_custom_tag tag = { .struct_size = sizeof(tag), .name = "abi", .value = "value" };
-    faam_metadata meta = { .struct_size = sizeof(meta), .title = "ABI", .custom_tags = &tag, .num_custom_tags = 1 };
+    faam_metadata_entry entry = test_text(TEST_KEY_TITLE, "ABI");
+
     faam_chapter ch = { .struct_size = sizeof(ch), .title = "Start" };
     faam_muxer_config cfg; STATUS(faam_muxer_config_init(&cfg, sizeof(cfg)), FAAM_OK);
-    cfg.tracks = &t; cfg.num_tracks = 1; cfg.metadata = &meta; cfg.chapters = &ch; cfg.num_chapters = 1;
+    cfg.tracks = &t; cfg.num_tracks = 1; cfg.metadata = &entry; cfg.num_metadata = 1; cfg.chapters = &ch; cfg.num_chapters = 1;
     faam_muxer *m = start(&f, &cfg); frames(m, 1);
     OUTPUT(faam_library_info, FAAM_LIBRARY_INFO_BASELINE, faam_get_library_info(&out.v));
     OUTPUT(faam_muxer_info, FAAM_MUXER_INFO_BASELINE, faam_muxer_get_info(m, 1, &out.v));
     finish(&m); faam_demuxer *d = open_mem(&f);
     OUTPUT(faam_track_info, FAAM_TRACK_INFO_BASELINE, faam_demuxer_get_track_info(d, 0, &out.v));
     OUTPUT(faam_gapless_info, FAAM_GAPLESS_INFO_BASELINE, faam_demuxer_get_track_gapless(d, 1, &out.v));
-    OUTPUT(faam_metadata, FAAM_METADATA_BASELINE, faam_demuxer_get_metadata(d, &out.v));
+    uint32_t count = 0; STATUS(faam_demuxer_get_num_metadata(d, &count), FAAM_OK); CHECK(count == 1);
+    STATUS(faam_demuxer_get_num_metadata(NULL, &count), FAAM_ERR_INVALID_ARGUMENT);
+    STATUS(faam_demuxer_get_num_metadata(d, NULL), FAAM_ERR_INVALID_ARGUMENT);
     OUTPUT(faam_chapter, FAAM_CHAPTER_BASELINE, faam_demuxer_get_chapter(d, 0, &out.v));
-    OUTPUT(faam_custom_tag, FAAM_CUSTOM_TAG_BASELINE, faam_demuxer_get_custom_tag(d, 0, &out.v));
+    OUTPUT(faam_metadata_entry, FAAM_METADATA_ENTRY_BASELINE, faam_demuxer_get_metadata_entry(d, 0, &out.v));
     OUTPUT(faam_frame_loc, FAAM_FRAME_LOC_BASELINE, faam_demuxer_next_frame_loc(d, &out.v));
     faam_frame_loc loc = { .struct_size = sizeof(loc) };
     while (faam_demuxer_next_frame_loc(d, &loc) == FAAM_OK) advance(d);
@@ -182,28 +191,27 @@ static void test_future_inputs(void) {
     memfile plain = {0}, newer = {0};
     faam_track_config tracks[2] = { audio(), audio() };
     faam_chapter chapters[2] = { { sizeof(faam_chapter), 0, 0, "One" }, { sizeof(faam_chapter), 0, 20, "Two" } };
-    faam_custom_tag tags[2] = { { sizeof(faam_custom_tag), 0, "one", "1", NULL }, { sizeof(faam_custom_tag), 0, "two", "2", "test" } };
-    faam_metadata meta = { .struct_size = sizeof(meta), .title = "Future", .custom_tags = tags, .num_custom_tags = 2 };
+    faam_metadata_entry tags[2] = { test_text(TEST_KEY_TITLE, "Future"), test_text(TEST_KEY_ARTIST, "Two") };
+
     faam_gapless_info gap = { sizeof(gap), 10, 20, 0, 3000 };
     faam_muxer_config cfg; STATUS(faam_muxer_config_init(&cfg, sizeof(cfg)), FAAM_OK);
-    cfg.tracks = tracks; cfg.num_tracks = 2; cfg.chapters = chapters; cfg.num_chapters = 2; cfg.metadata = &meta; cfg.gapless = &gap;
+    cfg.tracks = tracks; cfg.num_tracks = 2; cfg.chapters = chapters; cfg.num_chapters = 2; cfg.metadata = tags; cfg.num_metadata = 2; cfg.gapless = &gap;
     faam_muxer_update_params update = { .struct_size = sizeof(update), .flags = FAAM_UPDATE_LANGUAGE, .track_id = 2, .language = "deu" };
     faam_muxer *m = start(&plain, &cfg); STATUS(faam_muxer_update(m, &update), FAAM_OK); frames(m, 2); finish(&m);
-    FUTURE(faam_track_config) et[2]; FUTURE(faam_chapter) ec[2]; FUTURE(faam_custom_tag) eg[2];
-    FUTURE(faam_metadata) em; FUTURE(faam_gapless_info) gapx; FUTURE(faam_muxer_config) cx;
+    FUTURE(faam_track_config) et[2]; FUTURE(faam_chapter) ec[2]; FUTURE(faam_metadata_entry) eg[2];
+    FUTURE(faam_gapless_info) gapx; FUTURE(faam_muxer_config) cx;
     FUTURE(faam_muxer_update_params) ux; FUTURE(faam_io) ix; FUTURE(faam_demuxer_config) dx;
     for (unsigned i = 0; i < 2; i++) { EXTEND(et[i], tracks[i]); EXTEND(ec[i], chapters[i]); EXTEND(eg[i], tags[i]); }
-    EXTEND(em, meta); em.v.custom_tags = &eg[0].v;
-    EXTEND(gapx, gap); EXTEND(cx, cfg); cx.v.tracks = &et[0].v; cx.v.chapters = &ec[0].v; cx.v.metadata = &em.v; cx.v.gapless = &gapx.v;
+    EXTEND(gapx, gap); EXTEND(cx, cfg); cx.v.tracks = &et[0].v; cx.v.chapters = &ec[0].v; cx.v.metadata = &eg[0].v; cx.v.gapless = &gapx.v;
     EXTEND(ux, update); faam_io io = mem_io(&newer); EXTEND(ix, io);
     STATUS(faam_muxer_open(&cx.v, &ix.v, &m), FAAM_OK); STATUS(faam_muxer_update(m, &ux.v), FAAM_OK); frames(m, 2); finish(&m);
     CHECK(plain.len == newer.len && !memcmp(plain.buf, newer.buf, plain.len));
     faam_demuxer_config dc = { .struct_size = sizeof(dc) }; EXTEND(dx, dc);
     newer.pos = 0; faam_demuxer *d = NULL; STATUS(faam_demuxer_open(&dx.v, &ix.v, &d), FAAM_OK); faam_demuxer_close(&d);
     et[1].v.struct_size = sizeof(faam_track_config);
-    STATUS(faam_muxer_open(&cx.v, &ix.v, &m), FAAM_ERR_INVALID_ARG);
+    STATUS(faam_muxer_open(&cx.v, &ix.v, &m), FAAM_ERR_INVALID_ARGUMENT);
     et[1].v.struct_size = sizeof(et[1]);
-#define BAD_INPUT(v, baseline, call) do { uint32_t saved = (v).struct_size; (v).struct_size = (baseline)-1; STATUS(call, FAAM_ERR_INVALID_ARG); (v).struct_size = saved; } while (0)
+#define BAD_INPUT(v, baseline, call) do { uint32_t saved = (v).struct_size; (v).struct_size = (baseline)-1; STATUS(call, FAAM_ERR_INVALID_ARGUMENT); (v).struct_size = saved; } while (0)
     BAD_INPUT(cx.v, FAAM_MUXER_CONFIG_BASELINE, faam_muxer_open(&cx.v, &ix.v, &m));
     BAD_INPUT(et[0].v, FAAM_TRACK_CONFIG_BASELINE, faam_muxer_open(&cx.v, &ix.v, &m));
     BAD_INPUT(ec[0].v, FAAM_CHAPTER_BASELINE, faam_muxer_open(&cx.v, &ix.v, &m));
@@ -212,11 +220,11 @@ static void test_future_inputs(void) {
     BAD_INPUT(ix.v, FAAM_IO_BASELINE, faam_muxer_open(&cx.v, &ix.v, &m));
     m = start(&newer, &cfg);
     BAD_INPUT(ux.v, FAAM_MUXER_UPDATE_PARAMS_BASELINE, faam_muxer_update(m, &ux.v));
-    em.v.struct_size = FAAM_METADATA_BASELINE-1; cfg.metadata = &em.v;
-    faam_muxer_close(&m); m = start(&newer, &cfg);
-    STATUS(faam_muxer_finalize(m), FAAM_ERR_INVALID_ARG); em.v.struct_size = sizeof(em);
-    eg[0].v.struct_size = FAAM_CUSTOM_TAG_BASELINE-1;
-    STATUS(faam_muxer_finalize(m), FAAM_ERR_INVALID_ARG); faam_muxer_close(&m); eg[0].v.struct_size = sizeof(eg[0]);
+    faam_muxer_update_params tags_update = { .struct_size = sizeof(tags_update),
+        .flags = FAAM_UPDATE_METADATA, .metadata = &eg[0].v, .num_metadata = 2 };
+    STATUS(faam_muxer_update(m, &tags_update), FAAM_OK);
+    eg[0].v.struct_size = FAAM_METADATA_ENTRY_BASELINE-1;
+    STATUS(faam_muxer_finalize(m), FAAM_ERR_INVALID_ARGUMENT); faam_muxer_close(&m); eg[0].v.struct_size = sizeof(eg[0]);
     free(plain.buf); free(newer.buf);
 }
 
@@ -227,13 +235,13 @@ static void test_track_limits_ids(void) {
     memfile f = {0}; faam_io io = mem_io(&f); faam_muxer *m = NULL;
     for (unsigned n = 0; n <= 9; n += 9) {
         cfg.num_tracks = n;
-        STATUS(faam_muxer_open(&cfg, &io, &m), FAAM_ERR_INVALID_ARG); CHECK(m == NULL);
+        STATUS(faam_muxer_open(&cfg, &io, &m), FAAM_ERR_INVALID_ARGUMENT); CHECK(m == NULL);
     }
     cfg.num_tracks = 8; m = start(&f, &cfg);
     for (unsigned i = 0; i < 8; i++) { uint32_t id; STATUS(faam_muxer_get_track_id(m, i, &id), FAAM_OK); CHECK(id == i+1); }
     finish(&m); t[0].track_id = 42; m = start(&f, &cfg);
     uint32_t id; STATUS(faam_muxer_get_track_id(m, 0, &id), FAAM_OK); CHECK(id == 42); faam_muxer_close(&m);
-    t[1].track_id = 42; STATUS(faam_muxer_open(&cfg, &io, &m), FAAM_ERR_INVALID_ARG); free(f.buf);
+    t[1].track_id = 42; STATUS(faam_muxer_open(&cfg, &io, &m), FAAM_ERR_INVALID_ARGUMENT); free(f.buf);
 }
 
 static void test_odd_and_many(void) {
@@ -267,7 +275,7 @@ static void test_odd_and_many(void) {
     faam_demuxer *d = open_mem(&g); uint32_t held,total;
     STATUS(faam_demuxer_get_num_tracks(d,&held,&total),FAAM_OK); CHECK(held == 8 && total == 12);
     STATUS(faam_demuxer_get_num_tracks(d,&held,NULL),FAAM_OK);
-    faam_track_info ti = { .struct_size = sizeof(ti) }; STATUS(faam_demuxer_get_track_info(d,8,&ti),FAAM_ERR_INVALID_ARG);
+    faam_track_info ti = { .struct_size = sizeof(ti) }; STATUS(faam_demuxer_get_track_info(d,8,&ti),FAAM_ERR_INVALID_ARGUMENT);
     for (unsigned i = 0; i < 8; i++) { STATUS(faam_demuxer_get_track_info(d,i,&ti),FAAM_OK); CHECK(ti.track_id == 21+i); }
     faam_frame_loc loc = { .struct_size = sizeof(loc) }; uint64_t last = 0; unsigned counts[8] = {0};
     while (faam_demuxer_next_frame_loc(d,&loc) == FAAM_OK) { CHECK(loc.file_offset >= last); last=loc.file_offset; CHECK(loc.track_id>=21 && loc.track_id<29); counts[loc.track_id-21]++; advance(d); }
@@ -275,198 +283,36 @@ static void test_odd_and_many(void) {
     faam_demuxer_close(&d); free(g.buf); free(f.buf);
 }
 
-/* Check the serialized declaration independently of demux signature detection. */
-static void check_cover(memfile *f, const faam_metadata *meta,
-                        uint8_t cover_type, uint8_t data_type) {
-    long covr = find_tag(f, "covr", 0);
-    CHECK(covr >= 4 && (size_t)covr + 20 <= f->len);
-    CHECK(be32(f->buf + covr - 4) == 24 + meta->cover_bytes);
-    CHECK((size_t)covr - 4 + be32(f->buf + covr - 4) <= f->len);
-    CHECK(be32(f->buf + covr + 4) == 16 + meta->cover_bytes);
-    CHECK(!memcmp(f->buf + covr + 8, "data", 4));
-    CHECK(f->buf[covr + 15] == data_type);
-    CHECK(be32(f->buf + covr + 12) == data_type);
-    CHECK(!memcmp(f->buf + covr + 20, meta->cover_art, meta->cover_bytes));
-    faam_demuxer *d = open_mem(f);
-    faam_metadata got = { .struct_size = sizeof(got) };
-    STATUS(faam_demuxer_get_metadata(d, &got), FAAM_OK);
-    CHECK(got.cover_type == cover_type);
-    CHECK(got.cover_bytes == meta->cover_bytes);
-    CHECK(got.cover_art && !memcmp(got.cover_art, meta->cover_art, meta->cover_bytes));
-    faam_demuxer_close(&d);
-}
-
-static void test_metadata(void) {
-    bool cover_ok = true;
-    static const uint8_t png[] = {137,80,78,71,13,10,26,10,0}, jpg[] = {255,216,255,224,0};
-    for (unsigned mode=0;mode<4;mode++) {
-#ifndef FAAM_MUXER_FRAGMENTED
-        if (mode == 3) continue;
-#endif
-        memfile f={0}; faam_track_config t=audio(); faam_metadata meta={ .struct_size=sizeof(meta) };
-        faam_custom_tag tag={ .struct_size=sizeof(tag), .name="default-mean", .value="yes" };
-        meta.custom_tags=&tag; meta.num_custom_tags=1;
-        meta.cover_art=mode==2?jpg:png; meta.cover_bytes=mode==2?sizeof(jpg):sizeof(png);
-        meta.cover_type=mode==1?FAAM_COVER_JPEG:FAAM_COVER_AUTO;
-        if (mode==3) meta.title="At init";
-        faam_muxer_config cfg; STATUS(faam_muxer_config_init(&cfg,sizeof(cfg)),FAAM_OK);
-        cfg.tracks=&t; cfg.num_tracks=1; cfg.metadata=&meta; if(mode==3) cfg.fragment_ms=100;
-        faam_muxer *m=start(&f,&cfg); meta.title="After init"; frames(m,1);
-        if(mode!=3) { meta.struct_size=0; STATUS(faam_muxer_finalize(m),FAAM_ERR_INVALID_ARG); meta.struct_size=sizeof(meta); }
-        finish(&m); faam_demuxer *d=open_mem(&f); faam_metadata got={ .struct_size=sizeof(got) };
-        STATUS(faam_demuxer_get_metadata(d,&got),FAAM_OK);
-        CHECK(got.title && !strcmp(got.title,mode==3?"At init":"After init"));
-        if (got.cover_type != (mode==1||mode==2?FAAM_COVER_JPEG:FAAM_COVER_PNG)) fprintf(stderr, "cover mode %u: observed %u, expected %u\n", mode, got.cover_type, mode==1||mode==2?FAAM_COVER_JPEG:FAAM_COVER_PNG);
-        cover_ok &= got.cover_type==(mode==1||mode==2?FAAM_COVER_JPEG:FAAM_COVER_PNG);
-        CHECK(got.cover_bytes==meta.cover_bytes && !memcmp(got.cover_art,meta.cover_art,meta.cover_bytes));
-        faam_custom_tag gt={ .struct_size=sizeof(gt) }; STATUS(faam_demuxer_get_custom_tag(d,0,&gt),FAAM_OK);
-        CHECK(gt.mean && !strcmp(gt.mean,"com.apple.iTunes")); faam_demuxer_close(&d); free(f.buf);
-    }
-    CHECK(cover_ok);
-
-    static const uint8_t gif87[] = {'G','I','F','8','7','a',0};
-    static const uint8_t gif89[] = {'G','I','F','8','9','a',0};
-    static const uint8_t bmp[58] = {
-        [0]='B', [1]='M', [2]=58, [10]=54, [14]=40,
-        [18]=1, [22]=1, [26]=1, [28]=24, [34]=4
-    };
-    static const uint8_t bmp_core[30] = {
-        [0]='B', [1]='M', [2]=30, [10]=26, [14]=12,
-        [18]=1, [20]=1, [22]=1, [24]=24
-    };
-    static const uint8_t junk[] = {1,2,3,4,5,6,7,8};
-    static const struct {
-        const uint8_t *bytes;
-        uint32_t size;
-        uint8_t requested, declared, data_type;
-    } covers[] = {
-        {png, sizeof(png), FAAM_COVER_AUTO, FAAM_COVER_PNG, 14},
-        {png, sizeof(png), FAAM_COVER_JPEG, FAAM_COVER_JPEG, 13},
-        {jpg, sizeof(jpg), FAAM_COVER_AUTO, FAAM_COVER_JPEG, 13},
-        {gif87, sizeof(gif87), FAAM_COVER_AUTO, FAAM_COVER_GIF, 12},
-        {gif89, sizeof(gif89), FAAM_COVER_AUTO, FAAM_COVER_GIF, 12},
-        {bmp, sizeof(bmp), FAAM_COVER_BMP, FAAM_COVER_BMP, 27},
-        {bmp, sizeof(bmp), FAAM_COVER_AUTO, FAAM_COVER_BMP, 27},
-        {bmp_core, sizeof(bmp_core), FAAM_COVER_AUTO, FAAM_COVER_BMP, 27},
-        {gif89, sizeof(gif89), FAAM_COVER_PNG, FAAM_COVER_PNG, 14},
-        {junk, sizeof(junk), FAAM_COVER_JPEG, FAAM_COVER_JPEG, 13},
-        {gif87, sizeof(gif87), FAAM_COVER_GIF, FAAM_COVER_GIF, 12},
-    };
-    for (unsigned i = 0; i < sizeof(covers)/sizeof(covers[0]); i++) {
-        memfile f = {0}; faam_track_config t = audio();
-        faam_metadata meta = { .struct_size = sizeof(meta),
-            .cover_art = covers[i].bytes, .cover_bytes = covers[i].size,
-            .cover_type = covers[i].requested };
-        faam_muxer_config cfg;
-        STATUS(faam_muxer_config_init(&cfg, sizeof(cfg)), FAAM_OK);
-        cfg.tracks = &t; cfg.num_tracks = 1; cfg.metadata = &meta;
-        faam_muxer *m = start(&f, &cfg); frames(m, 1); finish(&m);
-        check_cover(&f, &meta, covers[i].declared, covers[i].data_type);
-
-        /* Unknown container declarations use the same detector and preserve bytes. */
-        long covr = find_tag(&f, "covr", 0); CHECK(covr > 0);
-        put32(f.buf + covr + 12, 0);
-        faam_demuxer *unknown = open_mem(&f);
-        faam_metadata got = { .struct_size = sizeof(got) };
-        STATUS(faam_demuxer_get_metadata(unknown, &got), FAAM_OK);
-        uint8_t detected = covers[i].bytes == junk ? FAAM_COVER_AUTO
-            : covers[i].bytes == png ? FAAM_COVER_PNG
-            : covers[i].bytes == jpg ? FAAM_COVER_JPEG
-            : (covers[i].bytes == bmp || covers[i].bytes == bmp_core) ? FAAM_COVER_BMP : FAAM_COVER_GIF;
-        CHECK(got.cover_type == detected && got.cover_bytes == meta.cover_bytes);
-        CHECK(!memcmp(got.cover_art, meta.cover_art, meta.cover_bytes));
-        faam_demuxer_close(&unknown);
-
-        /* Replace existing artwork through the retrofit writer. */
-        meta.cover_art = gif89; meta.cover_bytes = sizeof(gif89);
-        meta.cover_type = FAAM_COVER_AUTO;
-        f.pos = 0; faam_io io = mem_io(&f);
-        STATUS(faam_update_tags_stream(&io, &meta, 0), FAAM_OK);
-        check_cover(&f, &meta, FAAM_COVER_GIF, 12);
-        free(f.buf);
-    }
-
-    /* Unknown signatures, truncated headers and malformed BMP fields are rejected. */
-    for (unsigned bad = 0; bad < 17; bad++) {
-        uint8_t artwork[sizeof(bmp)]; memcpy(artwork, bmp, sizeof(artwork));
-        uint32_t size = sizeof(artwork);
-        switch (bad) {
-        case 0: memcpy(artwork, junk, sizeof(junk)); size = sizeof(junk); break;
-        case 1: memcpy(artwork, jpg, 2); size = 2; break;
-        case 2: memcpy(artwork, png, 7); size = 7; break;
-        case 3: memcpy(artwork, gif89, 5); size = 5; break;
-        case 4: size = 2; break; /* BM is insufficient */
-        case 5: size = 25; break;
-        case 6: size = 53; break;
-        case 7: size = 57; break; /* declared file size exceeds bytes */
-        case 8: artwork[6] = 1; break; /* reserved field */
-        case 9: artwork[10] = 20; break; /* pixels overlap headers */
-        case 10: artwork[10] = 59; break; /* pixels outside file */
-        case 11: artwork[14] = 16; break; /* unsupported DIB */
-        case 12: artwork[18] = 0; break; /* zero width */
-        case 13: artwork[22] = 0; break; /* zero height */
-        case 14: artwork[26] = 2; break; /* planes */
-        case 15: artwork[28] = 3; break; /* bit depth */
-        case 16: memset(artwork + 14, 255, 4); break; /* oversized DIB */
-        }
-        memfile f = {0}; faam_track_config t = audio();
-        faam_metadata meta = { .struct_size = sizeof(meta), .cover_art = artwork,
-            .cover_bytes = size, .cover_type = FAAM_COVER_AUTO };
-        faam_muxer_config cfg;
-        STATUS(faam_muxer_config_init(&cfg, sizeof(cfg)), FAAM_OK);
-        cfg.tracks = &t; cfg.num_tracks = 1; cfg.metadata = &meta;
-        faam_muxer *m = start(&f, &cfg); frames(m, 1);
-        STATUS(faam_muxer_finalize(m), FAAM_ERR_INVALID_ARG);
-        STATUS(faam_muxer_close(&m), FAAM_ERR_INVALID_ARG); free(f.buf);
-
-        /* A rejected tag update must leave the original file unchanged. */
-        memset(&f, 0, sizeof(f)); cfg.metadata = NULL;
-        m = start(&f, &cfg); frames(m, 1); finish(&m);
-        size_t before_len = f.len; uint8_t *before = malloc(f.len); CHECK(before);
-        memcpy(before, f.buf, f.len); faam_io io = mem_io(&f);
-        STATUS(faam_update_tags_stream(&io, &meta, 0), FAAM_ERR_INVALID_ARG);
-        CHECK(f.len == before_len && !memcmp(f.buf, before, before_len));
-        free(before); free(f.buf);
-    }
-
-    memfile f = {0}; faam_track_config t = audio();
-    faam_metadata meta = { .struct_size = sizeof(meta),
-        .cover_art = gif89, .cover_bytes = sizeof(gif89), .cover_type = 99 };
-    faam_muxer_config cfg;
-    STATUS(faam_muxer_config_init(&cfg, sizeof(cfg)), FAAM_OK);
-    cfg.tracks = &t; cfg.num_tracks = 1; cfg.metadata = &meta;
-    faam_muxer *m = start(&f, &cfg); frames(m, 1);
-    /* mux.c preserves the ilst writer error through finalize and close. */
-    STATUS(faam_muxer_finalize(m), FAAM_ERR_INVALID_ARG);
-    STATUS(faam_muxer_close(&m), FAAM_ERR_INVALID_ARG);
-    CHECK(m == NULL); free(f.buf);
-}
-
 static void test_updates_close_flags(void) {
     memfile f={0}; faam_track_config t=audio(); faam_muxer_config cfg;
-    STATUS(faam_muxer_config_init(&cfg,sizeof(cfg)),FAAM_OK); cfg.tracks=&t; cfg.num_tracks=1;
+    STATUS(faam_muxer_config_init(&cfg,sizeof(cfg)),FAAM_OK); cfg.tracks=&t; cfg.num_tracks=1; t.audio_sample_size=24;
     faam_muxer *m=start(&f,&cfg);
+    /* Entries become known only after open. */
+    faam_metadata_entry late_tag = test_text(TEST_KEY_TITLE, "Late");
     uint8_t data[FAAM_CODEC_DATA_MAX]; for(unsigned i=0;i<sizeof(data);i++) data[i]=(uint8_t)i; data[0]=0x12; data[1]=0x10;
     faam_gapless_info gap={ sizeof(gap), 10, 20, 0, 3000 };
     faam_muxer_update_params p={ .struct_size=sizeof(p), .track_id=1, .creation_time=1700000000,
-        .codec_data=data, .codec_data_len=sizeof(data), .language="deu", .audio_sample_size=24, .gapless=&gap };
-    const uint32_t flags[]={FAAM_UPDATE_CREATION_TIME,FAAM_UPDATE_GAPLESS,FAAM_UPDATE_CODEC_DATA,FAAM_UPDATE_LANGUAGE,FAAM_UPDATE_AUDIO_SAMPLE_SIZE};
+        .codec_data=data, .codec_data_len=sizeof(data), .language="deu", .gapless=&gap, .metadata=&late_tag, .num_metadata=1 };
+    const uint32_t flags[]={FAAM_UPDATE_CREATION_TIME,FAAM_UPDATE_GAPLESS,FAAM_UPDATE_CODEC_DATA,FAAM_UPDATE_LANGUAGE,FAAM_UPDATE_METADATA};
     for(unsigned i=0;i<5;i++) { p.flags=flags[i]; STATUS(faam_muxer_update(m,&p),FAAM_OK); }
-    p.flags=0x80000000; STATUS(faam_muxer_update(m,&p),FAAM_ERR_INVALID_ARG);
+    p.flags=0x80000000; STATUS(faam_muxer_update(m,&p),FAAM_ERR_INVALID_ARGUMENT);
     p.flags=FAAM_UPDATE_LANGUAGE; p.track_id=99; STATUS(faam_muxer_update(m,&p),FAAM_ERR_NO_TRACK); p.track_id=1;
     p.flags=FAAM_UPDATE_CREATION_TIME|FAAM_UPDATE_CODEC_DATA; p.creation_time=123; p.codec_data_len=FAAM_CODEC_DATA_MAX+1;
-    STATUS(faam_muxer_update(m,&p),FAAM_ERR_INVALID_ARG);
-    uint8_t frame[8]={0}; STATUS(faam_muxer_write_frame(m,1,frame,8,1024,0,2),FAAM_ERR_INVALID_ARG); frames(m,1);
-    STATUS(faam_muxer_finalize(m),FAAM_OK); p.flags=FAAM_UPDATE_LANGUAGE; STATUS(faam_muxer_update(m,&p),FAAM_ERR_INVALID_ARG); STATUS(faam_muxer_close(&m),FAAM_OK);
+    STATUS(faam_muxer_update(m,&p),FAAM_ERR_INVALID_ARGUMENT);
+    uint8_t frame[8]={0}; STATUS(faam_muxer_write_frame(m,1,frame,8,1024,0,2),FAAM_ERR_INVALID_ARGUMENT); frames(m,1);
+    STATUS(faam_muxer_finalize(m),FAAM_OK); p.flags=FAAM_UPDATE_LANGUAGE; STATUS(faam_muxer_update(m,&p),FAAM_ERR_INVALID_ARGUMENT); STATUS(faam_muxer_close(&m),FAAM_OK);
     long mv=find_tag(&f,"mvhd",0), mp=find_tag(&f,"mp4a",0); CHECK(mv>0 && mp>0);
     CHECK(be32(f.buf+mv+8)==1700000000U+2082844800U); /* rejected update did not apply creation time */
     CHECK(f.buf[mp+22]==0 && f.buf[mp+23]==24);
     faam_demuxer *d=open_mem(&f); uint8_t got[FAAM_CODEC_DATA_MAX]; uint32_t len;
     STATUS(faam_demuxer_get_codec_data(d,1,got,sizeof(got),&len),FAAM_OK); CHECK(len==sizeof(data) && !memcmp(got,data,len));
+    faam_metadata_entry tag = { .struct_size = sizeof(tag) };
+    STATUS(faam_demuxer_get_metadata_entry(d, 0, &tag), FAAM_OK);
+    CHECK(tag.key == TEST_KEY_TITLE && tag.data_bytes == 4 && !memcmp(tag.data, "Late", 4));
     faam_track_info ti={ .struct_size=sizeof(ti) }; STATUS(faam_demuxer_get_track_info(d,0,&ti),FAAM_OK); CHECK(!strcmp(ti.language,"deu"));
     faam_gapless_info g={ .struct_size=sizeof(g) }; STATUS(faam_demuxer_get_track_gapless(d,1,&g),FAAM_OK); CHECK(g.encoder_delay==10 && g.end_padding==20 && g.total_samples==3000);
-    faam_demuxer_close(&d); faam_io io=mem_io(&f); faam_metadata meta={ .struct_size=sizeof(meta) }; faam_chapter ch={ .struct_size=sizeof(ch), .title="One" };
-    STATUS(faam_update_tags_stream(&io,&meta,2),FAAM_ERR_INVALID_ARG); STATUS(faam_update_chapters_stream(&io,&ch,1,1),FAAM_ERR_INVALID_ARG);
+    faam_demuxer_close(&d); faam_io io=mem_io(&f); faam_chapter ch={ .struct_size=sizeof(ch), .title="One" };
+    STATUS(faam_update_metadata_stream(&io,NULL,0,2),FAAM_ERR_INVALID_ARGUMENT); STATUS(faam_update_chapters_stream(&io,&ch,1,1),FAAM_ERR_INVALID_ARGUMENT);
     free(f.buf); memset(&f,0,sizeof(f)); m=start(&f,&cfg); f.fail_write_after=f.len+4;
     STATUS(faam_muxer_write_frame(m,1,frame,8,1024,0,0),FAAM_ERR_IO_WRITE);
     STATUS(faam_muxer_finalize(m),FAAM_ERR_IO_WRITE); STATUS(faam_muxer_close(&m),FAAM_ERR_IO_WRITE); CHECK(!m);
@@ -474,7 +320,8 @@ static void test_updates_close_flags(void) {
     memset(&f,0,sizeof(f)); m=start(&f,&cfg); frames(m,1); f.fail_write_after=f.len+4;
     STATUS(faam_muxer_finalize(m),FAAM_ERR_IO_WRITE); STATUS(faam_muxer_close(&m),FAAM_ERR_IO_WRITE); free(f.buf);
 #ifdef FAAM_MUXER_FRAGMENTED
-    memset(&f,0,sizeof(f)); cfg.fragment_ms=100; m=start(&f,&cfg); STATUS(faam_muxer_update(m,&p),FAAM_ERR_UNSUPPORTED); finish(&m); free(f.buf);
+    memset(&f,0,sizeof(f)); cfg.fragment_ms=100; m=start(&f,&cfg);
+    for (unsigned i=0; i<5; i++) { p.flags=flags[i]; STATUS(faam_muxer_update(m,&p),FAAM_ERR_UNSUPPORTED); } finish(&m); free(f.buf);
 #endif
 }
 
@@ -506,7 +353,7 @@ static void test_video(void) {
         STATUS(faam_demuxer_next_frame_loc(d,&loc),FAAM_OK); CHECK(!loc.is_keyframe); faam_demuxer_close(&d); free(f.buf);
     }
     for(unsigned rot=45;rot<=360;rot+=315) { memfile f={0}; faam_io io=mem_io(&f); faam_muxer *m=NULL; t.rotation_degrees=rot;
-        STATUS(faam_muxer_open(&cfg,&io,&m),FAAM_ERR_INVALID_ARG); free(f.buf); }
+        STATUS(faam_muxer_open(&cfg,&io,&m),FAAM_ERR_INVALID_ARGUMENT); free(f.buf); }
     CHECK(inband_ok);
 #endif
 }
@@ -515,6 +362,6 @@ int main(int argc, char **argv) {
     /* Optional case name lets a failing contract be diagnosed independently. */
 #define RUN(name) do { if (argc == 1 || !strcmp(argv[1], #name)) test_##name(); } while (0)
     RUN(outputs); RUN(future_inputs); RUN(track_limits_ids); RUN(odd_and_many);
-    RUN(metadata); RUN(updates_close_flags); RUN(video);
+    RUN(updates_close_flags); RUN(video);
     puts("libfaam ABI tests passed."); return 0;
 }

@@ -17,6 +17,40 @@
 #ifndef FAAM_TEST_HELPERS_H
 #define FAAM_TEST_HELPERS_H
 
+#define TEST_KEY_TITLE FAAM_FOURCC(0xa9, 'n', 'a', 'm')
+#define TEST_KEY_ARTIST FAAM_FOURCC(0xa9, 'A', 'R', 'T')
+
+static inline faam_metadata_entry test_text(uint32_t key, const char *s)
+{
+    faam_metadata_entry e = { .struct_size = sizeof(e), .key = key, .data_type = FAAM_METADATA_UTF8,
+                              .data = s, .data_bytes = (uint32_t)strlen(s) };
+    return e;
+}
+
+/* Copy the first value of a key as text; false when the key is absent. */
+static inline bool test_get_text(faam_demuxer *d, uint32_t key, char *out, size_t cap)
+{
+    uint32_t meta_count = 0;
+    if (faam_demuxer_get_num_metadata(d, &meta_count) != FAAM_OK) return false;
+    for (uint32_t i = 0; i < meta_count; i++) {
+        faam_metadata_entry e = { .struct_size = sizeof(e) };
+        if (faam_demuxer_get_metadata_entry(d, i, &e) != FAAM_OK || e.key != key) continue;
+        snprintf(out, cap, "%.*s", (int)e.data_bytes, (const char *)e.data);
+        return true;
+    }
+    return false;
+}
+
+/* Set the title and, when given, the artist through the patch API. */
+static inline faam_status test_set_tags(const faam_io *io, const char *title, const char *artist, uint32_t flags)
+{
+    faam_metadata_entry e[2];
+    uint32_t n = 0;
+    if (title) e[n++] = test_text(TEST_KEY_TITLE, title);
+    if (artist) e[n++] = test_text(TEST_KEY_ARTIST, artist);
+    return faam_update_metadata_stream(io, e, n, flags);
+}
+
 static inline int32_t test_sink_write(void *user, const void *data, uint32_t size)
 {
     (void)data; *(uint64_t *)user += size; return (int32_t)size;
@@ -33,12 +67,12 @@ static inline faam_status test_append_track(faam_muxer_config *cfg,
                                            const faam_track_config *track,
                                            uint32_t *id)
 {
-    if (cfg->num_tracks >= 8) return FAAM_ERR_INVALID_ARG;
+    if (cfg->num_tracks >= 8) return FAAM_ERR_INVALID_ARGUMENT;
     tracks[cfg->num_tracks] = *track;
     cfg->tracks = tracks;
     cfg->num_tracks++;
     uint64_t pos = 0;
-    faam_io io = { sizeof(io), &pos, NULL, test_sink_write, test_sink_seek, test_sink_tell, NULL };
+    faam_io io = { .struct_size = sizeof(io), .user_data = &pos, .read = NULL, .write = test_sink_write, .seek = test_sink_seek, .tell = test_sink_tell, .flush = NULL };
     faam_muxer *m = NULL;
     faam_status st = faam_muxer_open(cfg, &io, &m);
     if (st == FAAM_OK && id) st = faam_muxer_get_track_id(m, cfg->num_tracks - 1, id);

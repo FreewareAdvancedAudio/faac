@@ -80,7 +80,7 @@ static bool cli_io_flush(void *user_data)
 
 faam_io cli_faam_io(FILE *f)
 {
-    faam_io io = { sizeof(faam_io), f, cli_io_read, cli_io_write, cli_io_seek, cli_io_tell, cli_io_flush };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = f, .read = cli_io_read, .write = cli_io_write, .seek = cli_io_seek, .tell = cli_io_tell, .flush = cli_io_flush };
     return io;
 }
 
@@ -154,7 +154,7 @@ const char *load_cover_art(const char *path, uint8_t **data, uint64_t *size)
             err = "Out of memory reading cover art file!\n";
         else if (fread(buf, 1, (size_t)sz, f) != (size_t)sz)
             err = "Error reading cover art file!\n";
-        else if (faam_detect_cover_type(buf, (uint32_t)sz) == FAAM_COVER_AUTO)
+        else if (!faam_detect_cover_type(buf, (uint32_t)sz))
             err = "Unsupported cover image file format!\n";
 
         if (err)

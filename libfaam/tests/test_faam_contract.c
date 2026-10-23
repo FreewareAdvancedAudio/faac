@@ -75,7 +75,7 @@ static bool mem_seek(void *user, uint64_t pos) {
 static uint64_t mem_tell(void *user) { return ((memfile *)user)->pos; }
 
 static faam_io mem_io(memfile *f) {
-    faam_io io = { sizeof(faam_io), f, mem_read, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = f, .read = mem_read, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     return io;
 }
 
@@ -178,17 +178,17 @@ static void test_status_contract(void) {
     faam_track_config cfg_tracks[8];
     CHECK(faam_muxer_config_init(&cfg, sizeof(cfg)) == FAAM_OK);
     faam_muxer *empty = (faam_muxer *)0x1;
-    CHECK(faam_muxer_open(&cfg, &full, &empty) == FAAM_ERR_INVALID_ARG && !empty);
+    CHECK(faam_muxer_open(&cfg, &full, &empty) == FAAM_ERR_INVALID_ARGUMENT && !empty);
     CHECK(FAAM_END_OF_STREAM > 0);
     faam_track_config tc = { .struct_size = sizeof(tc) };
     tc.track_type = FAAM_TRACK_AUDIO; tc.codec_id = FAAM_CODEC_AAC; tc.timescale = tc.sample_rate = 44100; tc.channels = 2;
     CHECK(test_append_track(&cfg, cfg_tracks, &tc, NULL) == FAAM_OK);
     faam_muxer *m = (faam_muxer *)0x1;
 
-    CHECK(faam_muxer_open(&cfg, &full, NULL) == FAAM_ERR_INVALID_ARG);
-    CHECK(faam_muxer_open(NULL, &full, &m) == FAAM_ERR_INVALID_ARG && !m);
+    CHECK(faam_muxer_open(&cfg, &full, NULL) == FAAM_ERR_INVALID_ARGUMENT);
+    CHECK(faam_muxer_open(NULL, &full, &m) == FAAM_ERR_INVALID_ARGUMENT && !m);
     m = (faam_muxer *)0x1;
-    CHECK(faam_muxer_open(&cfg, NULL, &m) == FAAM_ERR_INVALID_ARG && !m);
+    CHECK(faam_muxer_open(&cfg, NULL, &m) == FAAM_ERR_INVALID_ARGUMENT && !m);
 
     /* Missing callbacks are UNSUPPORTED, and fail before the file gets a single byte. */
     faam_io no_write = full, no_seek = full, no_tell = full;
@@ -200,7 +200,7 @@ static void test_status_contract(void) {
     }
     CHECK(f.len == 0);
     m = (faam_muxer *)0x1;
-    CHECK(faam_muxer_open(NULL, &full, &m) == FAAM_ERR_INVALID_ARG && !m);
+    CHECK(faam_muxer_open(NULL, &full, &m) == FAAM_ERR_INVALID_ARGUMENT && !m);
 
     /* read is not needed by the muxer. */
     faam_io write_only = full; write_only.read = NULL;
@@ -212,7 +212,7 @@ static void test_status_contract(void) {
     faam_muxer_config bad_cfg = cfg;
     bad_cfg.chapters = nulltitle; bad_cfg.num_chapters = 1;
     m = (faam_muxer *)0x1;
-    CHECK(faam_muxer_open(&bad_cfg, &full, &m) == FAAM_ERR_INVALID_ARG && !m);
+    CHECK(faam_muxer_open(&bad_cfg, &full, &m) == FAAM_ERR_INVALID_ARGUMENT && !m);
 
 #ifndef FAAM_MUXER_FRAGMENTED
     faam_muxer_config frag = cfg; frag.fragment_ms = 1000;
@@ -222,9 +222,9 @@ static void test_status_contract(void) {
 
     /* Demuxer. */
     faam_demuxer *d = (faam_demuxer *)0x1;
-    CHECK(faam_demuxer_open(NULL, &full, NULL) == FAAM_ERR_INVALID_ARG);
+    CHECK(faam_demuxer_open(NULL, &full, NULL) == FAAM_ERR_INVALID_ARGUMENT);
     d = (faam_demuxer *)0x1;
-    CHECK(faam_demuxer_open(NULL, NULL, &d) == FAAM_ERR_INVALID_ARG && !d);
+    CHECK(faam_demuxer_open(NULL, NULL, &d) == FAAM_ERR_INVALID_ARGUMENT && !d);
     faam_io no_read = full, no_dseek = full;
     no_read.read = NULL; no_dseek.seek = NULL;
     d = (faam_demuxer *)0x1;
@@ -232,7 +232,7 @@ static void test_status_contract(void) {
     d = (faam_demuxer *)0x1;
     CHECK(faam_demuxer_open(NULL, &no_read, &d) == FAAM_ERR_UNSUPPORTED && !d);
     d = (faam_demuxer *)0x1;
-    CHECK(faam_demuxer_open(NULL, NULL, &d) == FAAM_ERR_INVALID_ARG && !d);
+    CHECK(faam_demuxer_open(NULL, NULL, &d) == FAAM_ERR_INVALID_ARGUMENT && !d);
     /* An input with no moov still opens, with zero tracks. */
     memfile junk = {0};
     mem_write(&junk, "\0\0\0\x10" "free" "\0\0\0\0\0\0\0\0", 16);
@@ -243,16 +243,15 @@ static void test_status_contract(void) {
     free(junk.buf);
 
     /* In-place updates. */
-    faam_metadata meta = { .struct_size = sizeof(meta) }; meta.title = "t";
     faam_chapter ch[1] = { { sizeof(faam_chapter), 0, 0, "a" } };
-    CHECK(faam_update_tags_stream(NULL, &meta, 0) == FAAM_ERR_INVALID_ARG);
-    CHECK(faam_update_chapters_stream(NULL, ch, 1, 0) == FAAM_ERR_INVALID_ARG);
-    CHECK(faam_update_chapters_stream(&full, ch, 256, 0) == FAAM_ERR_INVALID_ARG);
-    CHECK(faam_update_chapters_stream(&full, nulltitle, 1, 0) == FAAM_ERR_INVALID_ARG);
+    CHECK(test_set_tags(NULL, "t", NULL, 0) == FAAM_ERR_INVALID_ARGUMENT);
+    CHECK(faam_update_chapters_stream(NULL, ch, 1, 0) == FAAM_ERR_INVALID_ARGUMENT);
+    CHECK(faam_update_chapters_stream(&full, ch, 256, 0) == FAAM_ERR_INVALID_ARGUMENT);
+    CHECK(faam_update_chapters_stream(&full, nulltitle, 1, 0) == FAAM_ERR_INVALID_ARGUMENT);
     faam_io variants[4] = { full, full, full, full };
     variants[0].read = NULL; variants[1].write = NULL; variants[2].seek = NULL; variants[3].tell = NULL;
     for (int i = 0; i < 4; i++) {
-        CHECK(faam_update_tags_stream(&variants[i], &meta, 0) == FAAM_ERR_UNSUPPORTED);
+        CHECK(test_set_tags(&variants[i], "t", NULL, 0) == FAAM_ERR_UNSUPPORTED);
         CHECK(faam_update_chapters_stream(&variants[i], ch, 1, 0) == FAAM_ERR_UNSUPPORTED);
     }
     free(f.buf);
@@ -281,15 +280,14 @@ static void test_short_reads(void) {
     memfile u = f; u.buf = (uint8_t *)malloc(f.len); memcpy(u.buf, f.buf, f.len); u.cap = f.len;
     u.max_read = 3; u.pos = 0;
     faam_io io = mem_io(&u);
-    faam_metadata meta = { .struct_size = sizeof(meta) }; meta.title = "Trickled title that is rather longer than any earlier one"; meta.artist = "A";
-    CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_OK);
+    CHECK(test_set_tags(&io, "Trickled title that is rather longer than any earlier one", "A", 0) == FAAM_OK);
     faam_chapter more[3] = { { sizeof(faam_chapter), 0, 0, "x" }, { sizeof(faam_chapter), 0, 1, "y" }, { sizeof(faam_chapter), 0, 2, "zz" } };
     u.pos = 0;
     CHECK(faam_update_chapters_stream(&io, more, 3, 0) == FAAM_OK);
     check_frames(&u, 40, 5);
     faam_demuxer *d = open_mem(&u, 5);
-    faam_metadata got_meta; got_meta.struct_size = sizeof(got_meta); uint32_t n = 0;
-    CHECK(faam_demuxer_get_metadata(d, &got_meta) == FAAM_OK && !strcmp(got_meta.artist, "A"));
+    char artist[16]; uint32_t n = 0;
+    CHECK(test_get_text(d, TEST_KEY_ARTIST, artist, sizeof(artist)) && !strcmp(artist, "A"));
     CHECK(test_read_chapters(d, NULL, 0, &n) == FAAM_OK && n == 3);
     faam_demuxer_close(&d);
     free(u.buf);
@@ -308,8 +306,7 @@ static void test_short_reads(void) {
     for (int after = 0; after < 6; after++) {
         ro.pos = 0; ro.reads = 0; ro.max_read = 0; ro.fail_read = false; ro.fail_read_after = after + 1;
         faam_io rio = mem_io(&ro);
-        faam_metadata rm = { .struct_size = sizeof(rm) }; rm.title = "never written";
-        CHECK(faam_update_tags_stream(&rio, &rm, 0) == FAAM_ERR_IO_READ);
+        CHECK(test_set_tags(&rio, "never written", NULL, 0) == FAAM_ERR_IO_READ);
         ro.pos = 0; ro.reads = 0;
         CHECK(faam_update_chapters_stream(&rio, ch, 2, 0) == FAAM_ERR_IO_READ);
         CHECK(ro.len == f.len && !memcmp(ro.buf, f.buf, f.len));
@@ -466,8 +463,9 @@ static void rename_tag(memfile *f, const char *from, const char *to) {
 
 typedef enum { ABSENT_UDTA, ABSENT_META, ABSENT_ILST, ABSENT_CHPL } absent_kind;
 
-static void collect(memfile *f, uint32_t *n_chapters, char titles[4][16], faam_metadata *meta_out, char *title_copy) {
-    /* meta_out->title/artist point into the demuxer: the copies below outlive it. */
+typedef struct { char title[64], artist[64]; uint16_t track_num, track_total; } faam_demuxer_meta;
+
+static void collect(memfile *f, uint32_t *n_chapters, char titles[4][16], faam_demuxer_meta *meta_out) {
     faam_demuxer *d = open_mem(f, 0);
     faam_chapter ch[4];
     for (uint32_t i = 0; i < 4; i++) ch[i].struct_size = sizeof(ch[i]);
@@ -475,22 +473,27 @@ static void collect(memfile *f, uint32_t *n_chapters, char titles[4][16], faam_m
     CHECK(test_read_chapters(d, ch, 4, &n) == FAAM_OK);
     *n_chapters = n;
     for (uint32_t i = 0; i < n && i < 4; i++) { strncpy(titles[i], ch[i].title, 15); titles[i][15] = 0; }
-    meta_out->struct_size = sizeof(*meta_out);
-    CHECK(faam_demuxer_get_metadata(d, meta_out) == FAAM_OK);
-    title_copy[0] = 0;
-    if (meta_out->title) strncpy(title_copy, meta_out->title, 63);
-    static char artist_store[64];
-    artist_store[0] = 0;
-    if (meta_out->artist) strncpy(artist_store, meta_out->artist, 63);
-    meta_out->artist = artist_store;
+    meta_out->title[0] = meta_out->artist[0] = 0;
+    test_get_text(d, TEST_KEY_TITLE, meta_out->title, sizeof(meta_out->title));
+    test_get_text(d, TEST_KEY_ARTIST, meta_out->artist, sizeof(meta_out->artist));
+    meta_out->track_num = meta_out->track_total = 0;
+    uint32_t meta_count = 0;
+    CHECK(faam_demuxer_get_num_metadata(d, &meta_count) == FAAM_OK);
+    for (uint32_t i = 0; i < meta_count; i++) {
+        faam_metadata_entry e = { .struct_size = sizeof(e) };
+        CHECK(faam_demuxer_get_metadata_entry(d, i, &e) == FAAM_OK);
+        if (e.key == FAAM_FOURCC('t', 'r', 'k', 'n') && e.data_bytes >= 6) {
+            const uint8_t *b = e.data;
+            meta_out->track_num = (uint16_t)(b[2] << 8 | b[3]);
+            meta_out->track_total = (uint16_t)(b[4] << 8 | b[5]);
+        }
+    }
     faam_demuxer_close(&d);
 }
 
 static void run_udta_case(bool moov_first, bool tags_first, absent_kind kind) {
     memfile f = {0};
     faam_chapter seed[1] = { { sizeof(faam_chapter), 0, 0, "seed" } };
-    faam_metadata seed_meta = { .struct_size = sizeof(seed_meta) }; seed_meta.title = "seed";
-    (void)seed_meta;
     mux_opts o = { .frames = 30, .ticks = 1024, .gapless = { sizeof(faam_gapless_info), 1024, 100, 0, 0 }, .num_chapters = 1, .chapters = seed };
     mux_file(&f, &o);
     switch (kind) {
@@ -509,13 +512,15 @@ static void run_udta_case(bool moov_first, bool tags_first, absent_kind kind) {
     memcpy(mdat_copy, f.buf + mdat_at, mdat_len);
 
     faam_io io = mem_io(&f);
-    faam_metadata meta = { .struct_size = sizeof(meta) };
-    meta.title = "Created title"; meta.artist = "Created artist"; meta.track_num = 3; meta.track_total = 9;
+    const uint8_t trkn[8] = { 0, 0, 0, 3, 0, 9, 0, 0 };
+    faam_metadata_entry entries[3] = { test_text(TEST_KEY_TITLE, "Created title"), test_text(TEST_KEY_ARTIST, "Created artist"),
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_FOURCC('t', 'r', 'k', 'n'),
+          .data_type = FAAM_METADATA_IMPLICIT, .data = trkn, .data_bytes = sizeof(trkn) } };
     faam_chapter chs[3] = { { sizeof(faam_chapter), 0, 0, "Intro" }, { sizeof(faam_chapter), 0, 61000, "Middle" }, { sizeof(faam_chapter), 0, 120500, "End" } };
     for (int step = 0; step < 2; step++) {
         bool tags = (step == 0) == tags_first;
         f.pos = 0;
-        if (tags) CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_OK);
+        if (tags) CHECK(faam_update_metadata_stream(&io, entries, 3, 0) == FAAM_OK);
         else CHECK(faam_update_chapters_stream(&io, chs, 3, 0) == FAAM_OK);
         check_frames(&f, 30, 0);
     }
@@ -526,17 +531,17 @@ static void run_udta_case(bool moov_first, bool tags_first, absent_kind kind) {
     CHECK(!memcmp(f.buf + new_mdat_at, mdat_copy, mdat_len));
     free(mdat_copy);
 
-    uint32_t n; char titles[4][16]; faam_metadata got; got.struct_size = sizeof(got); char title[64];
-    collect(&f, &n, titles, &got, title);
+    uint32_t n; char titles[4][16]; faam_demuxer_meta got;
+    collect(&f, &n, titles, &got);
     CHECK(n == 3 && !strcmp(titles[0], "Intro") && !strcmp(titles[2], "End"));
-    CHECK(!strcmp(title, "Created title") && !strcmp(got.artist, "Created artist"));
+    CHECK(!strcmp(got.title, "Created title") && !strcmp(got.artist, "Created artist"));
     CHECK(got.track_num == 3 && got.track_total == 9);
     /* A second pass on a now complete file replaces in place. */
     faam_chapter one[1] = { { sizeof(faam_chapter), 0, 7, "Only" } };
     f.pos = 0; CHECK(faam_update_chapters_stream(&io, one, 1, 0) == FAAM_OK);
-    meta.title = "Second"; f.pos = 0; CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_OK);
-    collect(&f, &n, titles, &got, title);
-    CHECK(n == 1 && !strcmp(titles[0], "Only") && !strcmp(title, "Second"));
+    f.pos = 0; CHECK(test_set_tags(&io, "Second", NULL, 0) == FAAM_OK);
+    collect(&f, &n, titles, &got);
+    CHECK(n == 1 && !strcmp(titles[0], "Only") && !strcmp(got.title, "Second"));
     check_frames(&f, 30, 0);
     /* Gapless survives the rewrites. */
     faam_demuxer *d = open_mem(&f, 0);
@@ -742,10 +747,10 @@ static void test_creation_time(void) {
     uint8_t one = 1;
     CHECK(faam_muxer_write_frame(m, 1, &one, 1, 1024, 0, FAAM_FRAME_KEYFRAME) == FAAM_OK);
     CHECK(faam_muxer_finalize(m) == FAAM_OK);
-    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_CREATION_TIME, .creation_time = 7 }) == FAAM_ERR_INVALID_ARG);
-    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_GAPLESS, .gapless = &g }) == FAAM_ERR_INVALID_ARG);
-    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_CODEC_DATA, .track_id = 1, .codec_data = asc_lc_44k, .codec_data_len = ASC_LEN }) == FAAM_ERR_INVALID_ARG);
-    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_LANGUAGE, .track_id = 1, .language = { ("eng")[0], ("eng")[1], ("eng")[2], 0 } }) == FAAM_ERR_INVALID_ARG);
+    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_CREATION_TIME, .creation_time = 7 }) == FAAM_ERR_INVALID_ARGUMENT);
+    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_GAPLESS, .gapless = &g }) == FAAM_ERR_INVALID_ARGUMENT);
+    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_CODEC_DATA, .track_id = 1, .codec_data = asc_lc_44k, .codec_data_len = ASC_LEN }) == FAAM_ERR_INVALID_ARGUMENT);
+    CHECK(faam_muxer_update(m, &(faam_muxer_update_params){ .struct_size = sizeof(faam_muxer_update_params), .flags = FAAM_UPDATE_LANGUAGE, .track_id = 1, .language = { ("eng")[0], ("eng")[1], ("eng")[2], 0 } }) == FAAM_ERR_INVALID_ARGUMENT);
     faam_muxer_close(&m);
     free(f.buf);
 }
@@ -895,10 +900,9 @@ static void test_extended_moov(void) {
     faam_demuxer_close(&d);
 
     faam_io io = mem_io(&x);
-    faam_metadata meta = { .struct_size = sizeof(meta) }; meta.title = "A title that makes the tag list grow";
     faam_chapter ch[1] = { { sizeof(faam_chapter), 0, 0, "Chapter" } };
     x.pos = 0;
-    faam_status st = faam_update_tags_stream(&io, &meta, 0);
+    faam_status st = test_set_tags(&io, "A title that makes the tag list grow", NULL, 0);
     CHECK(st == FAAM_ERR_UNSUPPORTED || st == FAAM_ERR_BAD_CONTAINER);
     CHECK(x.len == ref.len && !memcmp(x.buf, ref.buf, x.len));
     x.pos = 0;
@@ -930,10 +934,8 @@ static void test_chapters_preserve_ilst(memfile *f) {
     CHECK(!memcmp(saved, f->buf + pos - 4, size));
     free(saved);
 
-    faam_metadata meta = { .struct_size = sizeof(meta) };
-    meta.title = "After chapters";
     f->pos = 0;
-    CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_OK);
+    CHECK(test_set_tags(&io, "After chapters", NULL, 0) == FAAM_OK);
     faam_demuxer *d = open_mem(f, 0);
     faam_chapter got[2];
     for (uint32_t i = 0; i < 2; i++) got[i].struct_size = sizeof(got[i]);
@@ -946,6 +948,18 @@ static void test_chapters_preserve_ilst(memfile *f) {
     faam_demuxer_close(&d);
 }
 
+static faam_metadata_entry find_freeform(faam_demuxer *d) {
+    uint32_t meta_count = 0;
+    CHECK(faam_demuxer_get_num_metadata(d, &meta_count) == FAAM_OK);
+    for (uint32_t i = 0; i < meta_count; i++) {
+        faam_metadata_entry e = { .struct_size = sizeof(e) };
+        CHECK(faam_demuxer_get_metadata_entry(d, i, &e) == FAAM_OK);
+        if (e.key == FAAM_FOURCC('-', '-', '-', '-')) return e;
+    }
+    CHECK(!"freeform entry");
+    return (faam_metadata_entry){ 0 };
+}
+
 static void test_unmodeled_atoms_preservation(void) {
     memfile f = {0};
     mux_opts o = { .frames = 5, .ticks = 1024 };
@@ -953,8 +967,7 @@ static void test_unmodeled_atoms_preservation(void) {
 
     /* First create udta/meta/ilst via tag update */
     faam_io io = mem_io(&f);
-    faam_metadata init_meta = { .struct_size = sizeof(init_meta) }; init_meta.title = "Seed";
-    CHECK(faam_update_tags_stream(&io, &init_meta, 0) == FAAM_OK);
+    CHECK(test_set_tags(&io, "Seed", NULL, 0) == FAAM_OK);
 
     /* Construct custom ilst bytes containing modeled + unmodeled atoms */
     uint8_t custom_ilst[] = {
@@ -1006,24 +1019,17 @@ static void test_unmodeled_atoms_preservation(void) {
     test_chapters_preserve_ilst(&chapter_file);
     free(chapter_file.buf);
 
-    /* 1. Demuxer must report custom tag mean namespace */
+    /* 1. Demuxer must report the freeform mean namespace */
     faam_demuxer *d = open_mem(&f, 0);
-    faam_custom_tag tag = { .struct_size = sizeof(tag) };
-    faam_metadata meta_got; meta_got.struct_size = sizeof(meta_got);
-    CHECK(faam_demuxer_get_metadata(d, &meta_got) == FAAM_OK);
-    CHECK(meta_got.num_custom_tags == 1 && meta_got.custom_tags == NULL);
-    CHECK(faam_demuxer_get_custom_tag(d, 0, &tag) == FAAM_OK);
+    faam_metadata_entry tag = find_freeform(d);
     CHECK(!strcmp(tag.name, "MYKEY"));
-    CHECK(!strcmp(tag.value, "MYVAL"));
+    CHECK(tag.data_bytes == 5 && !memcmp(tag.data, "MYVAL", 5));
     CHECK(tag.mean && !strcmp(tag.mean, "com.custom.namespace"));
-
-    /* 2. Update tags via faam_update_tags_stream (changing title) */
-    faam_metadata update_meta = meta_got;
-    update_meta.custom_tags = &tag;
-    update_meta.title = "New Updated Title";
-    f.pos = 0;
-    CHECK(faam_update_tags_stream(&io, &update_meta, 0) == FAAM_OK);
     faam_demuxer_close(&d);
+
+    /* 2. Patching the title must keep every other atom */
+    f.pos = 0;
+    CHECK(test_set_tags(&io, "New Updated Title", NULL, 0) == FAAM_OK);
 
     /* Verify unmodeled atoms (\251grp, desc, xyz1, 2nd covr) and custom mean were preserved */
     CHECK(find_tag(&f, "\251grp", 0) > 0);
@@ -1036,18 +1042,15 @@ static void test_unmodeled_atoms_preservation(void) {
     CHECK(find_tag(&f, "com.custom.namespace", 0) > 0); /* custom mean preserved! */
 
     d = open_mem(&f, 0);
-    CHECK(faam_demuxer_get_metadata(d, &meta_got) == FAAM_OK);
-    CHECK(!strcmp(meta_got.title, "New Updated Title"));
-    CHECK(meta_got.num_custom_tags == 1 && meta_got.custom_tags == NULL);
-    CHECK(faam_demuxer_get_custom_tag(d, 0, &tag) == FAAM_OK);
+    char title[64];
+    CHECK(test_get_text(d, TEST_KEY_TITLE, title, sizeof(title)) && !strcmp(title, "New Updated Title"));
+    tag = find_freeform(d);
     CHECK(tag.mean && !strcmp(tag.mean, "com.custom.namespace"));
     faam_demuxer_close(&d);
 
-    /* 3. faam_update_tags_stream with FAAM_TAG_UPDATE_CLEAR must drop unmodeled atoms from ilst */
-    faam_metadata clear_meta = { .struct_size = sizeof(clear_meta) };
-    clear_meta.title = "Clear Title";
+    /* 3. FAAM_METADATA_UPDATE_CLEAR must drop unmodeled atoms from ilst */
     f.pos = 0;
-    CHECK(faam_update_tags_stream(&io, &clear_meta, FAAM_TAG_UPDATE_CLEAR) == FAAM_OK);
+    CHECK(test_set_tags(&io, "Clear Title", NULL, FAAM_METADATA_UPDATE_CLEAR) == FAAM_OK);
     long new_ilst = find_tag(&f, "ilst", 0);
     CHECK(new_ilst > 4);
     uint32_t new_ilst_sz = be32(f.buf + new_ilst - 4);
@@ -1068,8 +1071,7 @@ static void test_mdta_unsupported(void) {
 
     /* First update tags to ensure udta/meta/hdlr exist */
     faam_io io_init = mem_io(&f);
-    faam_metadata init_meta = { .struct_size = sizeof(init_meta) }; init_meta.title = "Seed";
-    CHECK(faam_update_tags_stream(&io_init, &init_meta, 0) == FAAM_OK);
+    CHECK(test_set_tags(&io_init, "Seed", NULL, 0) == FAAM_OK);
 
     /* Patch meta's hdlr from 'mdir' / 'mdirappl' to 'mdta' */
     long meta_pos = find_tag(&f, "meta", 0);
@@ -1085,8 +1087,7 @@ static void test_mdta_unsupported(void) {
     memcpy(ref.buf, f.buf, f.len);
 
     faam_io io = mem_io(&f);
-    faam_metadata meta = { .struct_size = sizeof(meta) }; meta.title = "Attempted Edit";
-    CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_ERR_UNSUPPORTED);
+    CHECK(test_set_tags(&io, "Attempted Edit", NULL, 0) == FAAM_ERR_UNSUPPORTED);
     /* Buffer must be untouched! */
     CHECK(f.len == ref.len && !memcmp(f.buf, ref.buf, f.len));
 
@@ -1228,10 +1229,8 @@ static void test_chunk_offset_wrap(void) {
 
     size_t before = f.len;
     faam_io io = mem_io(&f);
-    faam_metadata meta = { .struct_size = sizeof(meta) };
-    meta.title = "A title long enough that the tag list grows by more than sixteen bytes";
     f.pos = 0;
-    CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_OK);
+    CHECK(test_set_tags(&io, "A title long enough that the tag list grows by more than sixteen bytes", NULL, 0) == FAAM_OK);
     CHECK(f.len > before + 16);
     uint64_t delta = f.len - before;
 
@@ -1248,9 +1247,8 @@ static void test_overrunning_child_refused(void) {
     mux_opts o = { .frames = 8, .ticks = 1024 };
     mux_file(&f, &o);
     faam_io io = mem_io(&f);
-    faam_metadata meta = { .struct_size = sizeof(meta) }; meta.title = "Seed";
     f.pos = 0;
-    CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_OK);
+    CHECK(test_set_tags(&io, "Seed", NULL, 0) == FAAM_OK);
 
     /* The ilst is no longer recognised, and its size now runs one byte past meta. */
     long i = find_tag(&f, "ilst", 0);
@@ -1263,9 +1261,8 @@ static void test_overrunning_child_refused(void) {
     CHECK(ref.buf);
     memcpy(ref.buf, f.buf, f.len);
 
-    meta.title = "A longer title for the second edit";
     f.pos = 0;
-    CHECK(faam_update_tags_stream(&io, &meta, 0) == FAAM_ERR_BAD_CONTAINER);
+    CHECK(test_set_tags(&io, "A longer title for the second edit", NULL, 0) == FAAM_ERR_BAD_CONTAINER);
     CHECK(f.len == ref.len && !memcmp(f.buf, ref.buf, f.len));
     free(ref.buf);
     free(f.buf);
@@ -1286,7 +1283,7 @@ static void test_overrunning_child_refused(void) {
     CHECK(faam_update_chapters_stream(&gio, ch, 1, 0) == FAAM_ERR_BAD_CONTAINER);
     CHECK(g.len == gref.len && !memcmp(g.buf, gref.buf, g.len));
     g.pos = 0;
-    CHECK(faam_update_tags_stream(&gio, &meta, 0) == FAAM_ERR_BAD_CONTAINER);
+    CHECK(test_set_tags(&gio, "A longer title for the second edit", NULL, 0) == FAAM_ERR_BAD_CONTAINER);
     CHECK(g.len == gref.len && !memcmp(g.buf, gref.buf, g.len));
     free(gref.buf);
     free(g.buf);
@@ -1296,7 +1293,7 @@ static void test_overrunning_child_refused(void) {
     mux_file(&h, &o);
     faam_io hio = mem_io(&h);
     h.pos = 0;
-    CHECK(faam_update_tags_stream(&hio, &meta, 0) == FAAM_OK);
+    CHECK(test_set_tags(&hio, "A longer title for the second edit", NULL, 0) == FAAM_OK);
     long u = find_tag(&h, "udta", 0);
     CHECK(u >= 4);
     put32(h.buf + u - 4, 0);
@@ -1383,7 +1380,7 @@ static uint64_t cs_tell(void *u) { return ((counting_sink *)u)->written; }
 
 static void test_request_size_limit(void) {
     counting_sink c = {0};
-    faam_io io = { sizeof(io), &c, cs_read, cs_write, cs_seek, cs_tell, NULL };
+    faam_io io = { .struct_size = sizeof(io), .user_data = &c, .read = cs_read, .write = cs_write, .seek = cs_seek, .tell = cs_tell, .flush = NULL };
     faam_muxer_config cfg;
     faam_track_config t = { .struct_size = sizeof(t), .track_type = FAAM_TRACK_AUDIO, .codec_id = FAAM_CODEC_AAC,
         .timescale = 44100, .sample_rate = 44100, .channels = 2 };
@@ -1400,7 +1397,7 @@ static void test_request_size_limit(void) {
     unsigned writes = c.writes;
     const uint32_t sizes[3] = { (uint32_t)INT32_MAX + 1u, 0xC0000000u, UINT32_MAX };
     for (unsigned i = 0; i < 3; i++)
-        CHECK(faam_muxer_write_frame(m, 1, frame, sizes[i], 1024, 0, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARG);
+        CHECK(faam_muxer_write_frame(m, 1, frame, sizes[i], 1024, 0, FAAM_FRAME_KEYFRAME) == FAAM_ERR_INVALID_ARGUMENT);
     CHECK(c.writes == writes);         /* refused before touching the io */
     c.armed = false;                   /* and the refusal is not sticky */
     CHECK(faam_muxer_write_frame(m, 1, frame, sizeof(frame), 1024, 0, FAAM_FRAME_KEYFRAME) == FAAM_OK);
@@ -1439,8 +1436,7 @@ static void test_update_offset_wrap(void) {
         memfile f = { .buf = data, .len = sizeof(data), .cap = sizeof(data),
                       .fail_read_after = 12 };
         faam_io io = mem_io(&f);
-        faam_metadata meta = { .struct_size = sizeof(meta), .title = "new" };
-        faam_status st = tags ? faam_update_tags_stream(&io, &meta, 0)
+        faam_status st = tags ? test_set_tags(&io, "new", NULL, 0)
                               : faam_update_chapters_stream(&io, NULL, 0, 0);
         CHECK(st == FAAM_ERR_BAD_CONTAINER);
         CHECK(f.reads <= 12);
@@ -1469,8 +1465,7 @@ static void test_update_chunk_table_bounds(void) {
             memfile f = {0};
             mem_write(&f, data, 88 + extra);
             faam_io io = mem_io(&f);
-            faam_metadata meta = { .struct_size = sizeof(meta), .title = "new" };
-            faam_status st = tags ? faam_update_tags_stream(&io, &meta, 0)
+            faam_status st = tags ? test_set_tags(&io, "new", NULL, 0)
                                   : faam_update_chapters_stream(&io, NULL, 0, 0);
             CHECK(st != FAAM_OK);
             CHECK(f.len == 88 + extra && !memcmp(f.buf, data, f.len));

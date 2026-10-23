@@ -120,146 +120,60 @@ static const char *own_string(faam_demuxer *d, const uint8_t *text, uint32_t len
     return s->text;
 }
 
-#define FAAM_ILST_SET_STR(field) meta->field = own_string(d, val, val_len)
+/* Keep generic values independent of the temporary moov parse buffer. */
+static void parse_metadata_entry(const uint8_t *atom, uint32_t size, faam_demuxer *d) {
+    uint32_t key, mean_len, name_len;
+    const uint8_t *mean, *name;
+    if (!faam_metadata_atom_key(atom, size, &key, &mean, &mean_len, &name, &name_len)) return;
+    const char *owned_mean = NULL, *owned_name = NULL;
+    for (uint32_t off = 8; off + 8 <= size && !d->error;) {
+        uint32_t sub = read_u32_be(atom + off);
+        if (sub < 8 || sub > size - off) break;
+        if (sub >= 16 && !memcmp(atom + off + 4, "data", 4) && atom[off + 8] == 0) {
+            uint32_t count = d->num_entries;
+            if (count == d->entries_cap) {
+                size_t cap = d->entries_cap ? (size_t)d->entries_cap * 2 : 16;
+                if (cap > UINT32_MAX || cap > SIZE_MAX / sizeof(*d->entries)) {
+                    d->error = FAAM_ERR_INSUFFICIENT_MEM; return;
+                }
+                faam_metadata_entry *grown = (faam_metadata_entry *)faam_grow_memory(d->entries,
+                    (size_t)count * sizeof(*d->entries), cap * sizeof(*d->entries));
+                if (!grown) { d->error = FAAM_ERR_INSUFFICIENT_MEM; return; }
+                d->entries = grown; d->entries_cap = (uint32_t)cap;
+            }
+            if (name && !owned_name) {
+                owned_name = own_string(d, name, name_len);
+                owned_mean = mean_len ? own_string(d, mean, mean_len) : NULL;
+            }
+            faam_metadata_entry e = { .struct_size = sizeof(e), .key = key,
+                .data_type = read_u32_be(atom + off + 8), .locale = read_u32_be(atom + off + 12),
+                .data = own_string(d, atom + off + 16, sub - 16), .data_bytes = sub - 16,
+                .mean = owned_mean, .name = owned_name };
+            if (d->error) return;
+            d->entries[count] = e;
+            d->num_entries++;
+            /* Gapless timing remains a separate playback API as well as a tag. */
+            if (e.key == FAAM_FOURCC('-', '-', '-', '-') && e.name &&
+                !strcmp(e.name, "iTunSMPB") && (!e.mean || !strcmp(e.mean, "com.apple.iTunes")) &&
+                e.data_type == FAAM_METADATA_UTF8 &&
+                sscanf((const char *)e.data, " %*x %x %x %" SCNx64,
+                    &d->gapless.encoder_delay, &d->gapless.end_padding, &d->gapless.total_samples) >= 2)
+                d->has_gapless = true;
+        }
+        off += sub;
+    }
+}
 
-/* Strings returned to callers outlive the temporary container parse buffer. */
+/* The ilst parser is independent of the field names used by applications. */
 static void parse_ilst_children(const uint8_t *buf, long offset, long end, struct faam_demuxer *d)
 {
-    faam_metadata *meta = &d->metadata;
-    long cur = offset;
-    while (cur + 8 <= end) {
+    for (long cur = offset; cur + 8 <= end && !d->error;) {
         uint32_t size = read_u32_be(buf + cur);
-        char name[4];
-        memcpy(name, buf + cur + 4, 4);
-        if (size < 8 || cur + (long)size > end) break;
-        long content_end = cur + (long)size;
-        long data_off = cur + 8;
-
-        if (memcmp(name, "----", 4) == 0) {
-            const uint8_t *tagmean = NULL;
-            uint32_t tagmean_len = 0;
-            const uint8_t *tagname = NULL;
-            uint32_t tagname_len = 0;
-            const uint8_t *tval = NULL;
-            uint32_t tval_len = 0;
-            long p = data_off;
-            while (p + 8 <= content_end) {
-                uint32_t sub_size = read_u32_be(buf + p);
-                char sub_type[4];
-                memcpy(sub_type, buf + p + 4, 4);
-                if (sub_size < 8 || p + (long)sub_size > content_end) break;
-                if (memcmp(sub_type, "mean", 4) == 0 && sub_size > 12) {
-                    tagmean = buf + p + 12;
-                    tagmean_len = sub_size - 12;
-                } else if (memcmp(sub_type, "name", 4) == 0 && sub_size > 12) {
-                    tagname = buf + p + 12;
-                    tagname_len = sub_size - 12;
-                } else if (memcmp(sub_type, "data", 4) == 0 && sub_size >= 16) {
-                    tval = buf + p + 16;
-                    tval_len = sub_size - 16;
-                }
-                p += sub_size;
-            }
-            if (tval && tagname_len == 8 && !memcmp(tagname, "iTunSMPB", 8)) {
-                /* Gapless info, not a user tag: " 00000000 <priming> <padding> <length> ..." */
-                char str_buf[128] = { 0 };
-                uint32_t slen = tval_len < sizeof(str_buf) - 1 ? tval_len : (uint32_t)sizeof(str_buf) - 1;
-                memcpy(str_buf, tval, slen);
-                if (sscanf(str_buf, " %*x %x %x %" SCNx64, &d->gapless.encoder_delay, &d->gapless.end_padding, &d->gapless.total_samples) >= 2)
-                    d->has_gapless = true;
-            } else if (tagname_len && tval) {
-                uint32_t count = meta->num_custom_tags;
-                if (count >= UINT32_MAX / sizeof(faam_custom_tag) - 1) {
-                    d->error = FAAM_ERR_INSUFFICIENT_MEM;
-                } else {
-                    faam_custom_tag *tags = d->custom_tags;
-                    if (count == d->custom_tags_cap) {
-                        size_t cap = d->custom_tags_cap ? (size_t)d->custom_tags_cap * 2 : 8;
-                        if (cap > UINT32_MAX || cap > SIZE_MAX / sizeof(*tags)) {
-                            d->error = FAAM_ERR_INSUFFICIENT_MEM;
-                        } else {
-                            tags = (faam_custom_tag *)faam_grow_memory(tags,
-                                (size_t)count * sizeof(*tags), cap * sizeof(*tags));
-                            if (!tags) d->error = FAAM_ERR_INSUFFICIENT_MEM;
-                            else {
-                                d->custom_tags = tags;
-                                d->custom_tags_cap = (uint32_t)cap;
-                            }
-                        }
-                    }
-                    if (!d->error) {
-                        meta->custom_tags = tags;
-                        tags[count].struct_size = sizeof(faam_custom_tag);
-                        tags[count].mean = tagmean_len ? own_string(d, tagmean, tagmean_len) : NULL;
-                        tags[count].name = own_string(d, tagname, tagname_len);
-                        tags[count].value = own_string(d, tval, tval_len);
-                        meta->num_custom_tags++;
-                    }
-                }
-            }
-
-            cur += size;
-            continue;
-        }
-
-        if (data_off + 16 > content_end) { cur += size; continue; }
-        uint32_t data_box_size = read_u32_be(buf + data_off);
-        if (memcmp(buf + data_off + 4, "data", 4) != 0 || data_off + (long)data_box_size > content_end || data_box_size < 16) {
-            cur += size;
-            continue;
-        }
-        const uint8_t *val = buf + data_off + 16;
-        uint32_t val_len = data_box_size - 16;
-
-        if (!memcmp(name, "\251nam", 4)) FAAM_ILST_SET_STR(title);
-        else if (!memcmp(name, "sonm", 4)) FAAM_ILST_SET_STR(title_sort);
-        else if (!memcmp(name, "\251ART", 4)) FAAM_ILST_SET_STR(artist);
-        else if (!memcmp(name, "soar", 4)) FAAM_ILST_SET_STR(artist_sort);
-        else if (!memcmp(name, "\251alb", 4)) FAAM_ILST_SET_STR(album);
-        else if (!memcmp(name, "soal", 4)) FAAM_ILST_SET_STR(album_sort);
-        else if (!memcmp(name, "aART", 4)) FAAM_ILST_SET_STR(album_artist);
-        else if (!memcmp(name, "soaa", 4)) FAAM_ILST_SET_STR(album_artist_sort);
-        else if (!memcmp(name, "\251wrt", 4)) FAAM_ILST_SET_STR(composer);
-        else if (!memcmp(name, "soco", 4)) FAAM_ILST_SET_STR(composer_sort);
-        else if (!memcmp(name, "\251day", 4)) FAAM_ILST_SET_STR(year);
-        else if (!memcmp(name, "\251cmt", 4)) FAAM_ILST_SET_STR(comment);
-        else if (!memcmp(name, "\251too", 4)) FAAM_ILST_SET_STR(encoder);
-        else if (!memcmp(name, "\251gen", 4)) FAAM_ILST_SET_STR(genre_str);
-        else if (!memcmp(name, "gnre", 4) && val_len >= 2) meta->genre_code = read_u16_be(val);
-        else if (!memcmp(name, "cpil", 4) && val_len >= 1) meta->compilation = val[0] != 0;
-        else if (!memcmp(name, "trkn", 4) && val_len >= 6) {
-            meta->track_num = read_u16_be(val + 2);
-            meta->track_total = read_u16_be(val + 4);
-        } else if (!memcmp(name, "disk", 4) && val_len >= 6) {
-            meta->disc_num = read_u16_be(val + 2);
-            meta->disc_total = read_u16_be(val + 4);
-        } else if (!memcmp(name, "covr", 4) && val_len > 0) {
-            uint8_t *owned = (uint8_t *)AllocMemory(val_len);
-            if (!owned) d->error = FAAM_ERR_INSUFFICIENT_MEM;
-            if (owned) {
-                memcpy(owned, val, val_len);
-                if (d->cover_art_owned) FreeMemory(d->cover_art_owned);
-                d->cover_art_owned = owned;
-                meta->cover_art = owned;
-                meta->cover_bytes = val_len;
-                /* Honor declared types; sniff only unrecognized declarations. */
-                uint32_t declared = read_u32_be(buf + data_off + 8) & 0x00ffffff;
-                switch (declared) {
-                case 12: meta->cover_type = FAAM_COVER_GIF; break;
-                case 13: meta->cover_type = FAAM_COVER_JPEG; break;
-                case 14: meta->cover_type = FAAM_COVER_PNG; break;
-                case 27: meta->cover_type = FAAM_COVER_BMP; break;
-                default:
-                    meta->cover_type = faam_detect_cover_type(val, val_len);
-                    break;
-                }
-            }
-        }
-
+        if (size < 8 || size > (uint64_t)(end - cur)) break;
+        parse_metadata_entry(buf + cur, size, d);
         cur += size;
     }
 }
-#undef FAAM_ILST_SET_STR
 
 static bool reserve_tracks(faam_demuxer *d, uint32_t need)
 {
@@ -883,18 +797,17 @@ static bool demuxer_config_ok(const faam_demuxer_config *cfg)
 
 faam_status faam_demuxer_open(const faam_demuxer_config *cfg, const faam_io *io, faam_demuxer **out_demuxer)
 {
-    if (!out_demuxer) return FAAM_ERR_INVALID_ARG;
+    if (!out_demuxer) return FAAM_ERR_INVALID_ARGUMENT;
     *out_demuxer = NULL;
-    if (!io || !demuxer_config_ok(cfg)) return FAAM_ERR_INVALID_ARG;
+    if (!io || !demuxer_config_ok(cfg)) return FAAM_ERR_INVALID_ARGUMENT;
     faam_io loaded;
-    if (!faam_io_load(&loaded, io)) return FAAM_ERR_INVALID_ARG;
+    if (!faam_io_load(&loaded, io)) return FAAM_ERR_INVALID_ARGUMENT;
     if (!loaded.read || !loaded.seek) return FAAM_ERR_UNSUPPORTED;
 
     faam_demuxer *d = (faam_demuxer *)AllocMemory(sizeof(*d));
     if (!d) return FAAM_ERR_INSUFFICIENT_MEM;
     memset(d, 0, sizeof(*d));
     d->io = loaded;
-    d->metadata.struct_size = sizeof(d->metadata);
 
     /* Walk the top-level boxes by header and keep only moov in memory;
      * mdat can be gigabytes and sample data is read on demand. */
@@ -965,9 +878,8 @@ faam_status faam_demuxer_close(faam_demuxer **handle)
         FreeMemory(d->tracks[t].codec_data);
     }
     FreeMemory(d->tracks);
-    FreeMemory(d->cover_art_owned);
     FreeMemory(d->chapters);
-    FreeMemory(d->custom_tags);
+    FreeMemory(d->entries);
     while (d->strings) {
         faam_owned_string *next = d->strings->next;
         FreeMemory(d->strings);
@@ -979,7 +891,7 @@ faam_status faam_demuxer_close(faam_demuxer **handle)
 
 faam_status faam_demuxer_get_num_tracks(faam_demuxer *d, uint32_t *out_held, uint32_t *out_total)
 {
-    if (!d || !out_held) return FAAM_ERR_INVALID_ARG;
+    if (!d || !out_held) return FAAM_ERR_INVALID_ARGUMENT;
     *out_held = d->num_tracks;
     if (out_total) *out_total = d->total_tracks;
     return FAAM_OK;
@@ -987,14 +899,14 @@ faam_status faam_demuxer_get_num_tracks(faam_demuxer *d, uint32_t *out_held, uin
 
 faam_status faam_demuxer_get_track_info(faam_demuxer *d, uint32_t track_index, faam_track_info *out_info)
 {
-    if (!d || !out_info || out_info->struct_size < FAAM_TRACK_INFO_BASELINE || track_index >= d->num_tracks) return FAAM_ERR_INVALID_ARG;
+    if (!d || !out_info || out_info->struct_size < FAAM_TRACK_INFO_BASELINE || track_index >= d->num_tracks) return FAAM_ERR_INVALID_ARGUMENT;
     faam_copy_out(out_info, out_info->struct_size, &d->tracks[track_index].info, sizeof(faam_track_info));
     return FAAM_OK;
 }
 
 faam_status faam_demuxer_get_codec_data(faam_demuxer *d, uint32_t track_id, uint8_t *out_buf, uint32_t buf_cap, uint32_t *out_len)
 {
-    if (!d || !out_len || (!out_buf && buf_cap)) return FAAM_ERR_INVALID_ARG;
+    if (!d || !out_len || (!out_buf && buf_cap)) return FAAM_ERR_INVALID_ARGUMENT;
     *out_len = 0;
     faam_demuxer_track *tr = NULL;
     for (uint32_t t = 0; t < d->num_tracks; t++) {
@@ -1013,7 +925,7 @@ faam_status faam_demuxer_get_codec_data(faam_demuxer *d, uint32_t track_id, uint
 
 faam_status faam_demuxer_get_major_brand(faam_demuxer *d, char out_brand[5])
 {
-    if (!d || !out_brand) return FAAM_ERR_INVALID_ARG;
+    if (!d || !out_brand) return FAAM_ERR_INVALID_ARGUMENT;
     memcpy(out_brand, d->major_brand, 4);
     out_brand[4] = '\0';
     return FAAM_OK;
@@ -1064,7 +976,7 @@ static faam_status track_gapless(faam_demuxer *d, uint32_t track_id, faam_gaples
 
 faam_status faam_demuxer_get_track_gapless(faam_demuxer *d, uint32_t track_id, faam_gapless_info *out_gapless)
 {
-    if (!d || !out_gapless || out_gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE) return FAAM_ERR_INVALID_ARG;
+    if (!d || !out_gapless || out_gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
     if (track_id == 0) {
         /* The first audio track, else the first track. */
         for (uint32_t t = 0; t < d->num_tracks && !track_id; t++)
@@ -1080,26 +992,24 @@ faam_status faam_demuxer_get_track_gapless(faam_demuxer *d, uint32_t track_id, f
     return st;
 }
 
-faam_status faam_demuxer_get_metadata(faam_demuxer *d, faam_metadata *out_meta)
+faam_status faam_demuxer_get_num_metadata(faam_demuxer *d, uint32_t *out_count)
 {
-    if (!d || !out_meta || out_meta->struct_size < FAAM_METADATA_BASELINE) return FAAM_ERR_INVALID_ARG;
-    faam_metadata m = d->metadata;
-    m.custom_tags = NULL; /* read with faam_demuxer_get_custom_tag(): the stride is the library's */
-    faam_copy_out(out_meta, out_meta->struct_size, &m, sizeof(m));
+    if (!d || !out_count) return FAAM_ERR_INVALID_ARGUMENT;
+    *out_count = d->num_entries;
     return FAAM_OK;
 }
 
-faam_status faam_demuxer_get_custom_tag(faam_demuxer *d, uint32_t index, faam_custom_tag *out_tag)
+faam_status faam_demuxer_get_metadata_entry(faam_demuxer *d, uint32_t index, faam_metadata_entry *out)
 {
-    if (!d || !out_tag || out_tag->struct_size < FAAM_CUSTOM_TAG_BASELINE) return FAAM_ERR_INVALID_ARG;
-    if (index >= d->metadata.num_custom_tags) return FAAM_ERR_INVALID_ARG;
-    faam_copy_out(out_tag, out_tag->struct_size, &d->custom_tags[index], sizeof(faam_custom_tag));
+    if (!d || !out || out->struct_size < FAAM_METADATA_ENTRY_BASELINE || index >= d->num_entries)
+        return FAAM_ERR_INVALID_ARGUMENT;
+    faam_copy_out(out, out->struct_size, &d->entries[index], sizeof(*out));
     return FAAM_OK;
 }
 
 faam_status faam_demuxer_get_num_chapters(faam_demuxer *d, uint32_t *out_count)
 {
-    if (!d || !out_count) return FAAM_ERR_INVALID_ARG;
+    if (!d || !out_count) return FAAM_ERR_INVALID_ARGUMENT;
     *out_count = d->num_chapters;
     return FAAM_OK;
 }
@@ -1107,14 +1017,14 @@ faam_status faam_demuxer_get_num_chapters(faam_demuxer *d, uint32_t *out_count)
 faam_status faam_demuxer_get_chapter(faam_demuxer *d, uint32_t index, faam_chapter *out_chapter)
 {
     if (!d || !out_chapter || out_chapter->struct_size < FAAM_CHAPTER_BASELINE || index >= d->num_chapters)
-        return FAAM_ERR_INVALID_ARG;
+        return FAAM_ERR_INVALID_ARGUMENT;
     faam_copy_out(out_chapter, out_chapter->struct_size, &d->chapters[index], sizeof(faam_chapter));
     return FAAM_OK;
 }
 
 faam_status faam_demuxer_next_frame_loc(faam_demuxer *d, faam_frame_loc *out_loc)
 {
-    if (!d || !out_loc || out_loc->struct_size < FAAM_FRAME_LOC_BASELINE) return FAAM_ERR_INVALID_ARG;
+    if (!d || !out_loc || out_loc->struct_size < FAAM_FRAME_LOC_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
     faam_demuxer_track *tr;
     for (;;) {
         uint64_t min_offset = UINT64_MAX;
@@ -1150,7 +1060,7 @@ faam_status faam_demuxer_next_frame_loc(faam_demuxer *d, faam_frame_loc *out_loc
 
 faam_status faam_demuxer_read_frame(faam_demuxer *d, uint8_t *out_frame, uint32_t frame_cap, uint32_t *frame_bytes)
 {
-    if (!d || !frame_bytes) return FAAM_ERR_INVALID_ARG;
+    if (!d || !frame_bytes) return FAAM_ERR_INVALID_ARGUMENT;
 
     faam_frame_loc loc;
     memset(&loc, 0, sizeof(loc));

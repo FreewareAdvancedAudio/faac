@@ -149,7 +149,7 @@ static void test_repeated_table_box(void)
     add_tracks(&cfg, cfg_tracks);
     cfg.num_tracks = 1;
     memfile f = {0};
-    faam_io io = { sizeof(faam_io), &f, mem_read, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &f, .read = mem_read, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     faam_muxer *m;
     CHECK(faam_muxer_open(&cfg, &io, &m) == FAAM_OK);
     write_frames(m, false);
@@ -178,7 +178,7 @@ static void test_demuxer_track_memory(void)
     cfg.num_tracks = 1;
 
     memfile f = {0};
-    faam_io io = { sizeof(faam_io), &f, mem_read, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &f, .read = mem_read, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     faam_muxer *m = NULL;
     CHECK(faam_muxer_open(&cfg, &io, &m) == FAAM_OK);
     CHECK(faam_muxer_finalize(m) == FAAM_OK);
@@ -203,7 +203,7 @@ static bool failing_flush(void *);
 static faam_status mux_run(const faam_muxer_config *cfg, int io_failure)
 {
     sink out = {0};
-    faam_io io = { sizeof(faam_io), &out, NULL, sink_write, sink_seek, sink_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &out, .read = NULL, .write = sink_write, .seek = sink_seek, .tell = sink_tell, .flush = NULL };
     if (io_failure == 1) io.write = failing_write;
     if (io_failure == 2) io.flush = failing_flush;
     faam_muxer *m = (faam_muxer *)0x1;
@@ -251,13 +251,14 @@ static void mux_failures(faam_muxer_config *cfg)
 static faam_status demux_run(memfile *f, bool update)
 {
     f->pos = 0;
-    faam_io io = { sizeof(faam_io), f, mem_read, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = f, .read = mem_read, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     faam_demuxer *d = (faam_demuxer *)0x1;
     faam_status st = faam_demuxer_open(NULL, &io, &d);
     if (st != FAAM_OK) { CHECK(!d); return st; }
     if (update) {
-        faam_metadata meta = { .struct_size = sizeof(meta), .title = "replacement" };
-        st = faam_update_tags_stream(&io, &meta, 0);
+        faam_metadata_entry entry = { .struct_size = sizeof(entry), .key = FAAM_METADATA_KEY_TITLE,
+            .data_type = FAAM_METADATA_UTF8, .data = "replacement", .data_bytes = sizeof("replacement") - 1 };
+        st = faam_update_metadata_stream(&io, &entry, 1, 0);
     } else {
         faam_frame_loc loc = { .struct_size = sizeof(loc) };
         while ((st = faam_demuxer_next_frame_loc(d, &loc)) == FAAM_OK) {
@@ -275,7 +276,7 @@ static faam_status demux_run(memfile *f, bool update)
 static void demux_failures(faam_muxer_config *cfg, bool update)
 {
     memfile source = {0};
-    faam_io io = { sizeof(faam_io), &source, mem_read, mem_write, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &source, .read = mem_read, .write = mem_write, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     faam_muxer *m = NULL;
     reset(0);
     CHECK(faam_muxer_open(cfg, &io, &m) == FAAM_OK);
@@ -331,12 +332,17 @@ int main(void)
     uint8_t codec[512] = { 0x12, 0x10 };
     tracks[0].codec_data = codec;
     tracks[0].codec_data_len = sizeof(codec);
-    faam_custom_tag tags[32];
-    for (unsigned i = 0; i < 32; i++) tags[i] = (faam_custom_tag){ .struct_size = sizeof(faam_custom_tag), .mean = "com.example", .name = "key", .value = "value" };
-    faam_metadata meta = { .struct_size = sizeof(meta), .num_custom_tags = 32, .custom_tags = tags };
+    faam_metadata_entry entries[33];
+    for (unsigned i = 0; i < 32; i++) entries[i] = (faam_metadata_entry){
+        .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_FREEFORM,
+        .data_type = FAAM_METADATA_UTF8, .mean = "com.example", .name = "key",
+        .data = "value", .data_bytes = 5 };
     uint8_t cover[8] = { 0x89, 'P', 'N', 'G', 13, 10, 26, 10 };
-    meta.cover_art = cover; meta.cover_bytes = sizeof(cover); meta.cover_type = FAAM_COVER_PNG;
-    cfg.metadata = &meta;
+    entries[32] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry),
+        .key = FAAM_METADATA_KEY_COVER_ART, .data_type = FAAM_METADATA_PNG,
+        .data = cover, .data_bytes = sizeof(cover) };
+
+    cfg.metadata = entries; cfg.num_metadata = 33;
     faam_chapter chapters[2] = {
         { .struct_size = sizeof(faam_chapter), .title = "first" },
         { .struct_size = sizeof(faam_chapter), .start_ms = 1000, .title = "second" },

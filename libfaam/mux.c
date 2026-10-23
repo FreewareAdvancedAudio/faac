@@ -204,7 +204,7 @@ static faam_status write_ilst_bytes(void *user, const void *data, uint32_t size)
 
 faam_status faam_muxer_config_init(faam_muxer_config *cfg, uint32_t caller_size)
 {
-    if (!cfg || caller_size < FAAM_MUXER_CONFIG_BASELINE) return FAAM_ERR_INVALID_ARG;
+    if (!cfg || caller_size < FAAM_MUXER_CONFIG_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
     memset(cfg, 0, caller_size);
     cfg->struct_size = caller_size;
 
@@ -217,17 +217,17 @@ static faam_status check_track(const faam_track_config *tr) {
     if (tr->track_type == FAAM_TRACK_VIDEO) return FAAM_ERR_NOT_BUILT;
 #endif
     if (tr->track_id == UINT32_MAX || tr->codec_data_len > FAAM_CODEC_DATA_MAX ||
-        (tr->codec_data_len && !tr->codec_data)) return FAAM_ERR_INVALID_ARG;
+        (tr->codec_data_len && !tr->codec_data)) return FAAM_ERR_INVALID_ARGUMENT;
     if (tr->track_type == FAAM_TRACK_AUDIO)
-        return tr->codec_id == FAAM_CODEC_AAC && !tr->flags ? FAAM_OK : FAAM_ERR_INVALID_ARG;
-    if (tr->track_type != FAAM_TRACK_VIDEO || !tr->width || !tr->height) return FAAM_ERR_INVALID_ARG;
-    if (tr->codec_id != FAAM_CODEC_H264 && tr->codec_id != FAAM_CODEC_H265) return FAAM_ERR_INVALID_ARG;
-    if (tr->flags & ~(uint32_t)(FAAM_TRACK_ANNEXB | FAAM_TRACK_INBAND_PARAMS)) return FAAM_ERR_INVALID_ARG;
-    if (tr->rotation_degrees % 90 || tr->rotation_degrees > 270) return FAAM_ERR_INVALID_ARG;
+        return tr->codec_id == FAAM_CODEC_AAC && !tr->flags ? FAAM_OK : FAAM_ERR_INVALID_ARGUMENT;
+    if (tr->track_type != FAAM_TRACK_VIDEO || !tr->width || !tr->height) return FAAM_ERR_INVALID_ARGUMENT;
+    if (tr->codec_id != FAAM_CODEC_H264 && tr->codec_id != FAAM_CODEC_H265) return FAAM_ERR_INVALID_ARGUMENT;
+    if (tr->flags & ~(uint32_t)(FAAM_TRACK_ANNEXB | FAAM_TRACK_INBAND_PARAMS)) return FAAM_ERR_INVALID_ARGUMENT;
+    if (tr->rotation_degrees % 90 || tr->rotation_degrees > 270) return FAAM_ERR_INVALID_ARGUMENT;
     /* Annex-B H.264 streams carry their own SPS/PPS, so avcC may be derived. */
     bool derive = (tr->flags & FAAM_TRACK_ANNEXB) && tr->codec_id == FAAM_CODEC_H264;
     return (tr->codec_data && tr->codec_data_len) || (derive && !tr->codec_data_len) ?
-        FAAM_OK : FAAM_ERR_INVALID_ARG;
+        FAAM_OK : FAAM_ERR_INVALID_ARGUMENT;
 }
 
 /* The caller's config as this library's struct, and track i of it. Tracks are an array
@@ -238,15 +238,15 @@ static faam_status check_track(const faam_track_config *tr) {
 
 static faam_status config_in(const faam_muxer_config *src, faam_muxer_config *out)
 {
-    if (!src || src->struct_size < FAAM_MUXER_CONFIG_BASELINE) return FAAM_ERR_INVALID_ARG;
+    if (!src || src->struct_size < FAAM_MUXER_CONFIG_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
     faam_copy_in(out, sizeof(*out), src, src->struct_size);
     if (out->flags & ~(uint32_t)(FAAM_MUXER_M4B | FAAM_MUXER_CONSTANT_RATE | FAAM_MUXER_FASTSTART))
-        return FAAM_ERR_INVALID_ARG;
-    if (!out->num_tracks || out->num_tracks > FAAM_MAX_TRACKS || !out->tracks) return FAAM_ERR_INVALID_ARG;
-    if (out->tracks->struct_size < FAAM_TRACK_CONFIG_BASELINE) return FAAM_ERR_INVALID_ARG;
+        return FAAM_ERR_INVALID_ARGUMENT;
+    if (!out->num_tracks || out->num_tracks > FAAM_MAX_TRACKS || !out->tracks) return FAAM_ERR_INVALID_ARGUMENT;
+    if (out->tracks->struct_size < FAAM_TRACK_CONFIG_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
     for (uint32_t t = 1; t < out->num_tracks; t++)
         if (((const faam_track_config *)((const uint8_t *)out->tracks + (size_t)t * out->tracks->struct_size))->struct_size
-            != out->tracks->struct_size) return FAAM_ERR_INVALID_ARG;
+            != out->tracks->struct_size) return FAAM_ERR_INVALID_ARGUMENT;
     return FAAM_OK;
 }
 
@@ -289,44 +289,46 @@ static void write_moov(faam_muxer *m, bool frag);
 
 faam_status faam_muxer_open(const faam_muxer_config *src, const faam_io *io, faam_muxer **out_muxer)
 {
-    if (!out_muxer) return FAAM_ERR_INVALID_ARG;
+    if (!out_muxer) return FAAM_ERR_INVALID_ARGUMENT;
     *out_muxer = NULL;
-    if (!src || !io) return FAAM_ERR_INVALID_ARG;
+    if (!src || !io) return FAAM_ERR_INVALID_ARGUMENT;
     faam_muxer_config cfg;
     faam_status st = config_in(src, &cfg);
     if (st != FAAM_OK) return st;
     faam_io io_in;
-    if (!faam_io_load(&io_in, io)) return FAAM_ERR_INVALID_ARG;
+    if (!faam_io_load(&io_in, io)) return FAAM_ERR_INVALID_ARGUMENT;
 #ifndef FAAM_MUXER_FRAGMENTED
     if (cfg.fragment_ms) return FAAM_ERR_NOT_BUILT;
 #endif
     /* Both modes patch sizes behind the write position, so seek and tell are not optional. */
     if (!io_in.write || !io_in.seek || !io_in.tell) return FAAM_ERR_UNSUPPORTED;
-    if ((cfg.flags & FAAM_MUXER_FASTSTART) && cfg.fragment_ms) return FAAM_ERR_INVALID_ARG;
+    if ((cfg.flags & FAAM_MUXER_FASTSTART) && cfg.fragment_ms) return FAAM_ERR_INVALID_ARGUMENT;
     if ((cfg.flags & FAAM_MUXER_FASTSTART) && !io_in.read) return FAAM_ERR_UNSUPPORTED;
-    if (cfg.num_chapters > 255 || (cfg.num_chapters && !cfg.chapters)) return FAAM_ERR_INVALID_ARG;
-    if (cfg.num_chapters && cfg.chapters->struct_size < FAAM_CHAPTER_BASELINE) return FAAM_ERR_INVALID_ARG;
-    /* A progressive file reads the metadata when it finalizes, so it may still be filled in until
-     * then; a fragmented one writes it now. */
-    if (cfg.fragment_ms && cfg.metadata && cfg.metadata->struct_size < FAAM_METADATA_BASELINE) return FAAM_ERR_INVALID_ARG;
-    if (cfg.gapless && cfg.gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE) return FAAM_ERR_INVALID_ARG;
+    if (cfg.num_chapters > 255 || (cfg.num_chapters && !cfg.chapters)) return FAAM_ERR_INVALID_ARGUMENT;
+    if (cfg.num_chapters && cfg.chapters->struct_size < FAAM_CHAPTER_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
+    /* A progressive file reads the metadata when it finalizes; a fragmented one writes it now. */
+    if (cfg.fragment_ms) {
+        faam_status ms = faam_metadata_entries_validate(cfg.metadata, cfg.num_metadata);
+        if (ms != FAAM_OK) return ms;
+    }
+    if (cfg.gapless && cfg.gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
     for (uint32_t c = 0; c < cfg.num_chapters; c++)
-        if (!faam_chapter_at(cfg.chapters, c)->title) return FAAM_ERR_INVALID_ARG;
+        if (!faam_chapter_at(cfg.chapters, c)->title) return FAAM_ERR_INVALID_ARGUMENT;
     for (uint32_t t = 0; t < cfg.num_tracks; t++) {
         faam_track_config tc;
         track_in(&cfg, t, &tc);
         faam_status ts = check_track(&tc);
         if (ts != FAAM_OK) return ts;
-        if (tc.gapless && tc.gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE) return FAAM_ERR_INVALID_ARG;
+        if (tc.gapless && tc.gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
         /* Track ids number the tracks in order unless the caller names them. */
         if (!tc.track_id) tc.track_id = t + 1;
         /* The moov precedes every frame, so a fragmented file cannot wait for an avcC. */
         if (cfg.fragment_ms && tc.track_type == FAAM_TRACK_VIDEO && !tc.codec_data_len)
-            return FAAM_ERR_INVALID_ARG;
+            return FAAM_ERR_INVALID_ARGUMENT;
         for (uint32_t k = 0; k < t; k++) {
             faam_track_config other;
             track_in(&cfg, k, &other);
-            if ((other.track_id ? other.track_id : k + 1) == tc.track_id) return FAAM_ERR_INVALID_ARG;
+            if ((other.track_id ? other.track_id : k + 1) == tc.track_id) return FAAM_ERR_INVALID_ARGUMENT;
         }
     }
     faam_muxer *m = (faam_muxer *)AllocMemory(sizeof(*m));
@@ -345,6 +347,7 @@ faam_status faam_muxer_open(const faam_muxer_config *src, const faam_io *io, faa
     }
     if (cfg.gapless) faam_copy_in(&m->cfg.gapless, sizeof(m->cfg.gapless), cfg.gapless, cfg.gapless->struct_size);
     m->cfg.metadata = cfg.metadata;
+    m->cfg.num_metadata = cfg.num_metadata;
     m->cfg.chapters = cfg.chapters;
     m->cfg.num_chapters = cfg.num_chapters;
     m->gapless_present = m->cfg.gapless.encoder_delay || m->cfg.gapless.end_padding || m->cfg.gapless.total_samples;
@@ -382,7 +385,7 @@ faam_status faam_muxer_open(const faam_muxer_config *src, const faam_io *io, faa
             tr->has_gapless = tr->gapless.encoder_delay || tr->gapless.end_padding || tr->gapless.total_samples;
         }
         tr->cfg.gapless = NULL;
-        tr->audio_sample_size = 16;
+        tr->audio_sample_size = tr->cfg.audio_sample_size ? tr->cfg.audio_sample_size : 16;
         if (tr->cfg.codec_data && tr->cfg.codec_data_len > 0) {
             uint32_t len = tr->cfg.codec_data_len;
             if (len <= FAAM_CODEC_INLINE) {
@@ -470,7 +473,7 @@ faam_status faam_muxer_open(const faam_muxer_config *src, const faam_io *io, faa
 
 faam_status faam_muxer_get_track_id(const faam_muxer *m, uint32_t track_index, uint32_t *out_track_id)
 {
-    if (!m || !out_track_id || track_index >= m->num_tracks) return FAAM_ERR_INVALID_ARG;
+    if (!m || !out_track_id || track_index >= m->num_tracks) return FAAM_ERR_INVALID_ARGUMENT;
     *out_track_id = m->tracks[track_index].cfg.track_id;
     return FAAM_OK;
 }
@@ -483,26 +486,28 @@ static faam_muxer_track *track_by_id(faam_muxer *m, uint32_t track_id) {
 
 faam_status faam_muxer_update(faam_muxer *m, const faam_muxer_update_params *src)
 {
-    if (!m || !src || src->struct_size < FAAM_MUXER_UPDATE_PARAMS_BASELINE || m->finalized) return FAAM_ERR_INVALID_ARG;
+    if (!m || !src || src->struct_size < FAAM_MUXER_UPDATE_PARAMS_BASELINE || m->finalized) return FAAM_ERR_INVALID_ARGUMENT;
     faam_muxer_update_params p;
     faam_copy_in(&p, sizeof(p), src, src->struct_size);
     const uint32_t known = FAAM_UPDATE_CREATION_TIME | FAAM_UPDATE_GAPLESS | FAAM_UPDATE_CODEC_DATA |
-                           FAAM_UPDATE_LANGUAGE | FAAM_UPDATE_AUDIO_SAMPLE_SIZE;
-    if (p.flags & ~known) return FAAM_ERR_INVALID_ARG;
+                           FAAM_UPDATE_LANGUAGE | FAAM_UPDATE_METADATA;
+    if (p.flags & ~known) return FAAM_ERR_INVALID_ARGUMENT;
     if (FRAGMENTED(m)) return FAAM_ERR_UNSUPPORTED; /* moov is already on disk */
 
     /* Validate everything before applying any of it. */
     faam_muxer_track *tr = NULL;
-    if (p.flags & (FAAM_UPDATE_CODEC_DATA | FAAM_UPDATE_LANGUAGE | FAAM_UPDATE_AUDIO_SAMPLE_SIZE)) {
+    if (p.flags & (FAAM_UPDATE_CODEC_DATA | FAAM_UPDATE_LANGUAGE)) {
         tr = track_by_id(m, p.track_id);
         if (!tr) return FAAM_ERR_NO_TRACK;
     }
     if ((p.flags & FAAM_UPDATE_CODEC_DATA) &&
-        (p.codec_data_len > FAAM_CODEC_DATA_MAX || (p.codec_data_len && !p.codec_data))) return FAAM_ERR_INVALID_ARG;
+        (p.codec_data_len > FAAM_CODEC_DATA_MAX || (p.codec_data_len && !p.codec_data))) return FAAM_ERR_INVALID_ARGUMENT;
     if ((p.flags & FAAM_UPDATE_GAPLESS) &&
-        (!p.gapless || p.gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE)) return FAAM_ERR_INVALID_ARG;
-    if ((p.flags & FAAM_UPDATE_AUDIO_SAMPLE_SIZE) &&
-        (!p.audio_sample_size || tr->cfg.track_type != FAAM_TRACK_AUDIO)) return FAAM_ERR_INVALID_ARG;
+        (!p.gapless || p.gapless->struct_size < FAAM_GAPLESS_INFO_BASELINE)) return FAAM_ERR_INVALID_ARGUMENT;
+    if (p.flags & FAAM_UPDATE_METADATA) {
+        faam_status ms = faam_metadata_entries_validate(p.metadata, p.num_metadata);
+        if (ms != FAAM_OK) return ms;
+    }
 
     if (p.flags & FAAM_UPDATE_CODEC_DATA) {
         faam_status cs = set_track_codec(tr, p.codec_data, p.codec_data_len);
@@ -517,7 +522,10 @@ faam_status faam_muxer_update(faam_muxer *m, const faam_muxer_update_params *src
         memset(tr->cfg.language, 0, sizeof(tr->cfg.language));
         for (unsigned i = 0; i < 3 && p.language[i]; i++) tr->cfg.language[i] = p.language[i];
     }
-    if (p.flags & FAAM_UPDATE_AUDIO_SAMPLE_SIZE) tr->audio_sample_size = p.audio_sample_size;
+    if (p.flags & FAAM_UPDATE_METADATA) {
+        m->cfg.metadata = p.metadata;
+        m->cfg.num_metadata = p.num_metadata;
+    }
     return FAAM_OK;
 }
 
@@ -614,7 +622,7 @@ static faam_status annexb_scan(faam_muxer_track *tr, const uint8_t *buf, uint32_
         total += 4 + (uint64_t)len;
         if (tr->cfg.codec_id == FAAM_CODEC_H264) capture_avcc(tr, buf + start, len);
     }
-    if (r < 0 || !total || total > UINT32_MAX) return FAAM_ERR_INVALID_ARG;
+    if (r < 0 || !total || total > UINT32_MAX) return FAAM_ERR_INVALID_ARGUMENT;
     *out_bytes = (uint32_t)total;
     return FAAM_OK;
 }
@@ -759,7 +767,7 @@ faam_status faam_muxer_write_frame(faam_muxer *m, uint32_t track_id, const uint8
 {
     if (m && m->error) return m->error;
     if (!m || m->finalized || !frame_buf || frame_bytes == 0 || frame_bytes > INT32_MAX || (frame_flags & ~(uint32_t)FAAM_FRAME_KEYFRAME))
-        return FAAM_ERR_INVALID_ARG;
+        return FAAM_ERR_INVALID_ARGUMENT;
     const bool is_keyframe = frame_flags & FAAM_FRAME_KEYFRAME;
 
     faam_muxer_track *tr = NULL;
@@ -772,7 +780,7 @@ faam_status faam_muxer_write_frame(faam_muxer *m, uint32_t track_id, const uint8
     if (!tr) return FAAM_ERR_NO_TRACK;
     if (cts_offset != 0) {
 #ifdef FAAM_MUXER_VIDEO
-        if (tr->cfg.track_type != FAAM_TRACK_VIDEO) return FAAM_ERR_INVALID_ARG;
+        if (tr->cfg.track_type != FAAM_TRACK_VIDEO) return FAAM_ERR_INVALID_ARGUMENT;
 #else
         return FAAM_ERR_NOT_BUILT;
 #endif
@@ -790,7 +798,7 @@ faam_status faam_muxer_write_frame(faam_muxer *m, uint32_t track_id, const uint8
 
 #ifdef FAAM_MUXER_FRAGMENTED
     if (m->fragmented) {
-        if (out_bytes > FRAG_MAX_BYTES) return FAAM_ERR_INVALID_ARG;
+        if (out_bytes > FRAG_MAX_BYTES) return FAAM_ERR_INVALID_ARGUMENT;
         if (m->frag_open && frag_should_close(m, tr, out_bytes, is_keyframe)) close_fragment(m);
         if (!m->error && !m->frag_open) open_fragment(m);
         if (m->error) return m->error;
@@ -1275,14 +1283,9 @@ static void write_moov(faam_muxer *m, bool frag)
     end_atom(m, hdlr2);
 
     uint32_t ilst_size;
-    faam_metadata snapshot; /* the caller's struct as this library sees it */
-    const faam_metadata *md = NULL;
-    if (m->cfg.metadata) {
-        faam_copy_in(&snapshot, sizeof(snapshot), m->cfg.metadata, m->cfg.metadata->struct_size);
-        md = &snapshot;
-    }
+    const faam_entry_list md = { .entries = m->cfg.metadata, .count = m->cfg.num_metadata };
     if (!m->error)
-        m->error = faam_write_ilst(md, m->gapless_present ? &m->cfg.gapless : NULL,
+        m->error = faam_write_ilst(&md, m->gapless_present ? &m->cfg.gapless : NULL,
                                   NULL, 0, write_ilst_bytes, m, &ilst_size);
     end_atom(m, meta);
     end_atom(m, udta);
@@ -1333,15 +1336,16 @@ static faam_status muxer_faststart(faam_muxer *m, uint64_t moov_start, uint64_t 
 
 faam_status faam_muxer_finalize(faam_muxer *m)
 {
-    if (!m) return FAAM_ERR_INVALID_ARG;
+    if (!m) return FAAM_ERR_INVALID_ARGUMENT;
     if (m->error) return m->error;
     if (m->finalized) return FAAM_OK;
-    if (m->cfg.metadata && m->cfg.metadata->struct_size < FAAM_METADATA_BASELINE) return FAAM_ERR_INVALID_ARG;
+    faam_status ms = faam_metadata_entries_validate(m->cfg.metadata, m->cfg.num_metadata);
+    if (ms != FAAM_OK) return ms;
     for (uint32_t c = 0; c < m->cfg.num_chapters; c++)
-        if (!faam_chapter_at(m->cfg.chapters, c)->title) return FAAM_ERR_INVALID_ARG;
+        if (!faam_chapter_at(m->cfg.chapters, c)->title) return FAAM_ERR_INVALID_ARGUMENT;
     for (uint32_t t = 0; t < m->num_tracks; t++)
         if (m->tracks[t].cfg.track_type == FAAM_TRACK_VIDEO && !m->tracks[t].codec_data_len)
-            return m->error = FAAM_ERR_INVALID_ARG; /* Annex-B stream never carried SPS and PPS */
+            return m->error = FAAM_ERR_INVALID_ARGUMENT; /* Annex-B stream never carried SPS and PPS */
     uint64_t pos = m->io.tell(m->io.user_data);
 #ifdef FAAM_MUXER_FRAGMENTED
     if (m->fragmented) {
@@ -1421,7 +1425,7 @@ faam_status faam_muxer_close(faam_muxer **handle)
 
 faam_status faam_muxer_get_info(const faam_muxer *m, uint32_t track_id, faam_muxer_info *out_info)
 {
-    if (!m || !out_info || out_info->struct_size < FAAM_MUXER_INFO_BASELINE) return FAAM_ERR_INVALID_ARG;
+    if (!m || !out_info || out_info->struct_size < FAAM_MUXER_INFO_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
     const faam_muxer_track *tr = NULL;
     for (uint32_t t = 0; t < m->num_tracks; t++)
         if (m->tracks[t].cfg.track_id == track_id) tr = &m->tracks[t];

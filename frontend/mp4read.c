@@ -28,6 +28,8 @@
 #include "faam.h"
 #include "mp4read.h"
 #include "cli_io.h"
+#include "charset.h"
+#include "endian.h"
 
 typedef struct {
     const uint8_t *buf;
@@ -70,11 +72,6 @@ static void add_tag(MP4Track *out, const char *name, const char *value)
     out->num_tags++;
 }
 
-static void add_text(MP4Track *out, const char *label, const char *value)
-{
-    if (value) add_tag(out, label, value);
-}
-
 static void add_index(MP4Track *out, const char *label, uint16_t num, uint16_t total)
 {
     char buf[32];
@@ -83,41 +80,49 @@ static void add_index(MP4Track *out, const char *label, uint16_t num, uint16_t t
     add_tag(out, label, buf);
 }
 
-/* Listed in the order the faac muxer writes them, so a faac file reads back
- * in the order it was tagged. */
-static void add_tags(MP4Track *out, faam_demuxer *d, const faam_metadata *m)
+/* Display names belong to the frontend; libfaam exposes typed atom values. */
+static void add_tags(MP4Track *out, faam_demuxer *d, uint32_t count)
 {
-    add_text(out, "Encoder", m->encoder);
-    add_text(out, "Artist", m->artist);
-    add_text(out, "Artist Sort", m->artist_sort);
-    add_text(out, "Composer", m->composer);
-    add_text(out, "Composer Sort", m->composer_sort);
-    add_text(out, "Title", m->title);
-    add_text(out, "Album", m->album);
-    add_text(out, "Album Artist", m->album_artist);
-    add_text(out, "Album Artist Sort", m->album_artist_sort);
-    add_text(out, "Album Sort", m->album_sort);
-    add_text(out, "Genre", m->genre_str);
-    add_text(out, "Year", m->year);
-    add_text(out, "Comment", m->comment);
-    add_text(out, "Title Sort", m->title_sort);
-    if (m->genre_code) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), "#%u", m->genre_code - 1u);
-        add_tag(out, "Genre", buf);
+    static const struct { uint32_t key; const char *label; } labels[] = {
+        { FAAM_METADATA_KEY_ENCODER, "Encoder" }, { FAAM_METADATA_KEY_ARTIST, "Artist" },
+        { FAAM_METADATA_KEY_ARTIST_SORT, "Artist Sort" }, { FAAM_METADATA_KEY_COMPOSER, "Composer" },
+        { FAAM_METADATA_KEY_COMPOSER_SORT, "Composer Sort" }, { FAAM_METADATA_KEY_TITLE, "Title" },
+        { FAAM_METADATA_KEY_ALBUM, "Album" }, { FAAM_METADATA_KEY_ALBUM_ARTIST, "Album Artist" },
+        { FAAM_METADATA_KEY_ALBUM_ARTIST_SORT, "Album Artist Sort" },
+        { FAAM_METADATA_KEY_ALBUM_SORT, "Album Sort" }, { FAAM_METADATA_KEY_GENRE, "Genre" },
+        { FAAM_METADATA_KEY_YEAR, "Year" }, { FAAM_METADATA_KEY_COMMENT, "Comment" },
+        { FAAM_METADATA_KEY_TITLE_SORT, "Title Sort" }, { FAAM_METADATA_KEY_LYRICS, "Lyrics" },
+        { FAAM_METADATA_KEY_GROUPING, "Grouping" }, { FAAM_METADATA_KEY_COPYRIGHT, "Copyright" },
+        { FAAM_METADATA_KEY_DESCRIPTION, "Description" },
+        { FAAM_METADATA_KEY_LONG_DESCRIPTION, "Long Description" },
+        { FAAM_METADATA_KEY_WORK, "Work" }, { FAAM_METADATA_KEY_MOVEMENT, "Movement" },
+        { FAAM_METADATA_KEY_BPM, "BPM" }, { FAAM_METADATA_KEY_MOVEMENT_NUMBER, "Movement Number" },
+        { FAAM_METADATA_KEY_MOVEMENT_TOTAL, "Movement Total" },
+        { FAAM_METADATA_KEY_SHOW_WORK_MOVEMENT, "Show Work/Movement" }
+    };
+    for (uint32_t i = 0; i < count; i++) {
+        faam_metadata_entry e = { .struct_size = sizeof(e) };
+        if (faam_demuxer_get_metadata_entry(d, i, &e) != FAAM_OK) continue;
+        const uint8_t *v = e.data;
+        if (e.key == FAAM_METADATA_KEY_COVER_ART) { out->cover_bytes = e.data_bytes; continue; }
+        if (e.key == FAAM_METADATA_KEY_TRACK && e.data_bytes >= 6)
+            add_index(out, "Track", read_u16_be(v + 2), read_u16_be(v + 4));
+        else if (e.key == FAAM_METADATA_KEY_DISC && e.data_bytes >= 6)
+            add_index(out, "Disc", read_u16_be(v + 2), read_u16_be(v + 4));
+        else if (e.key == FAAM_METADATA_KEY_COMPILATION && e.data_bytes && v[0]) add_tag(out, "Compilation", "Yes");
+        else if (e.key == FAAM_METADATA_KEY_GENRE_CODE && e.data_bytes == 2 && read_u16_be(v)) {
+            const char *name = id3_genre_name(read_u16_be(v) - 1u);
+            char value[32];
+            if (!name) snprintf(value, sizeof(value), "#%u", read_u16_be(v) - 1u);
+            add_tag(out, "Genre", name ? name : value);
+        } else if (e.data_type == FAAM_METADATA_UTF8 && !memchr(v, 0, e.data_bytes)) {
+            const char *label = e.name;
+            if (label && !strcmp(label, "iTunSMPB") && (!e.mean || !strcmp(e.mean, "com.apple.iTunes"))) continue;
+            for (size_t j = 0; !label && j < sizeof(labels) / sizeof(labels[0]); j++)
+                if (e.key == labels[j].key) label = labels[j].label;
+            if (label) add_tag(out, label, e.data);
+        }
     }
-    if (m->compilation) add_tag(out, "Compilation", "Yes");
-    add_index(out, "Track", m->track_num, m->track_total);
-    add_index(out, "Disc", m->disc_num, m->disc_total);
-    for (uint32_t i = 0; i < m->num_custom_tags; i++) {
-        faam_custom_tag c = { .struct_size = sizeof(c) };
-        char label[64];
-        if (faam_demuxer_get_custom_tag(d, i, &c) != FAAM_OK) continue;
-        if (!c.name || !c.value || !c.value[0]) continue;
-        snprintf(label, sizeof(label), "%s", c.name);
-        add_tag(out, label, c.value);
-    }
-    out->cover_bytes = m->cover_bytes;
 }
 
 /* Collect every sample of the chosen track, or report an incomplete index. */
@@ -190,7 +195,7 @@ static bool read_track_io(faam_io *io, const uint8_t *prefix, uint64_t file_size
     if (track_id) {
         char brand[5];
         faam_gapless_info gapless = { .struct_size = sizeof(gapless) };
-        faam_metadata meta = { .struct_size = sizeof(meta) };
+        uint32_t meta_count = 0;
         if (faam_demuxer_get_major_brand(d, brand) == FAAM_OK) {
             size_t n = strlen(brand);
             while (n && brand[n - 1] == ' ') brand[--n] = '\0';
@@ -200,7 +205,7 @@ static bool read_track_io(faam_io *io, const uint8_t *prefix, uint64_t file_size
             track->delay = gapless.encoder_delay;
             track->padding = gapless.end_padding;
         }
-        if (faam_demuxer_get_metadata(d, &meta) == FAAM_OK) add_tags(track, d, &meta);
+        if (faam_demuxer_get_num_metadata(d, &meta_count) == FAAM_OK) add_tags(track, d, meta_count);
         collect_samples(d, track_id, file_size, track);
     }
 
@@ -216,7 +221,7 @@ bool mp4_read_track_buf(const uint8_t *buf, uint64_t file_size, uint32_t want_tr
     memset(track, 0, sizeof(*track));
     if (!buf || file_size < 32) return false;
     mem_stream ms = { buf, file_size, 0 };
-    faam_io io = { sizeof(io), &ms, mem_read, NULL, mem_seek, mem_tell, NULL };
+    faam_io io = { .struct_size = sizeof(io), .user_data = &ms, .read = mem_read, .write = NULL, .seek = mem_seek, .tell = mem_tell, .flush = NULL };
     return read_track_io(&io, buf, file_size, want_track_id, track);
 }
 
