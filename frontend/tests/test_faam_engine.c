@@ -70,6 +70,26 @@ static bool sample_cb(void *user, const faam_frame_loc *loc,
     return true;
 }
 
+static void assert_metadata_entry(faam_demuxer *demuxer, uint32_t key, uint32_t type,
+                                  const void *expected, uint32_t expected_bytes)
+{
+    uint32_t metadata_count = 0;
+    assert(faam_demuxer_get_num_metadata(demuxer, &metadata_count) == FAAM_OK);
+    assert(metadata_count == 11);
+
+    for (uint32_t i = 0; i < metadata_count; i++) {
+        faam_metadata_entry entry = { .struct_size = sizeof(entry) };
+        assert(faam_demuxer_get_metadata_entry(demuxer, i, &entry) == FAAM_OK);
+        if (entry.key == key) {
+            assert(entry.data_type == type);
+            assert(entry.data_bytes == expected_bytes);
+            assert(expected_bytes == 0 || memcmp(entry.data, expected, expected_bytes) == 0);
+            return;
+        }
+    }
+    assert(!"metadata key not found");
+}
+
 static size_t append_frame(uint8_t *out, size_t pos, adts_params params, uint8_t payload)
 {
     uint8_t header[ADTS_HEADER_SIZE];
@@ -110,6 +130,43 @@ static void test_mux_and_demux_engine(void)
     assert(faam_muxer_config_init(&config, sizeof(config)) == FAAM_OK);
     config.num_tracks = 2;
     config.tracks = tracks;
+    static const char lyrics[] = "Lyrics\nline two";
+    static const char grouping[] = "Group";
+    static const char copyright[] = "Copyright";
+    static const char description[] = "Description";
+    static const char long_description[] = "Long description";
+    static const char work[] = "Work";
+    static const char movement[] = "Movement";
+    static const uint8_t bpm[] = { 0x00, 0x78 };
+    static const uint8_t movement_number[] = { 0x00, 0x03 };
+    static const uint8_t movement_total[] = { 0x00, 0x04 };
+    static const uint8_t show_work_movement[] = { 0x01 };
+    faam_metadata_entry metadata_entries[] = {
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_LYRICS,
+          .data_type = FAAM_METADATA_UTF8, .data = lyrics, .data_bytes = sizeof(lyrics) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_GROUPING,
+          .data_type = FAAM_METADATA_UTF8, .data = grouping, .data_bytes = sizeof(grouping) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_COPYRIGHT,
+          .data_type = FAAM_METADATA_UTF8, .data = copyright, .data_bytes = sizeof(copyright) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_DESCRIPTION,
+          .data_type = FAAM_METADATA_UTF8, .data = description, .data_bytes = sizeof(description) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_LONG_DESCRIPTION,
+          .data_type = FAAM_METADATA_UTF8, .data = long_description, .data_bytes = sizeof(long_description) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_WORK,
+          .data_type = FAAM_METADATA_UTF8, .data = work, .data_bytes = sizeof(work) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_MOVEMENT,
+          .data_type = FAAM_METADATA_UTF8, .data = movement, .data_bytes = sizeof(movement) - 1 },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_BPM,
+          .data_type = FAAM_METADATA_INTEGER, .data = bpm, .data_bytes = sizeof(bpm) },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_MOVEMENT_NUMBER,
+          .data_type = FAAM_METADATA_INTEGER, .data = movement_number, .data_bytes = sizeof(movement_number) },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_MOVEMENT_TOTAL,
+          .data_type = FAAM_METADATA_INTEGER, .data = movement_total, .data_bytes = sizeof(movement_total) },
+        { .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_SHOW_WORK_MOVEMENT,
+          .data_type = FAAM_METADATA_INTEGER, .data = show_work_movement, .data_bytes = sizeof(show_work_movement) },
+    };
+
+    config.metadata = metadata_entries; config.num_metadata = sizeof(metadata_entries) / sizeof(metadata_entries[0]);
 
     faam_io output_io = { .struct_size = sizeof(output_io), .user_data = output,
                           .read = file_read, .write = file_write,
@@ -141,6 +198,28 @@ static void test_mux_and_demux_engine(void)
                          .read = file_read, .seek = file_seek, .tell = file_tell };
     faam_demuxer *demuxer = NULL;
     assert(faam_demuxer_open(NULL, &input_io, &demuxer) == FAAM_OK);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_LYRICS, FAAM_METADATA_UTF8,
+                          lyrics, sizeof(lyrics) - 1);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_GROUPING, FAAM_METADATA_UTF8,
+                          grouping, sizeof(grouping) - 1);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_COPYRIGHT, FAAM_METADATA_UTF8,
+                          copyright, sizeof(copyright) - 1);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_DESCRIPTION, FAAM_METADATA_UTF8,
+                          description, sizeof(description) - 1);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_LONG_DESCRIPTION, FAAM_METADATA_UTF8,
+                          long_description, sizeof(long_description) - 1);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_WORK, FAAM_METADATA_UTF8,
+                          work, sizeof(work) - 1);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_MOVEMENT, FAAM_METADATA_UTF8,
+                          movement, sizeof(movement) - 1);
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_BPM, FAAM_METADATA_INTEGER,
+                          bpm, sizeof(bpm));
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_MOVEMENT_NUMBER, FAAM_METADATA_INTEGER,
+                          movement_number, sizeof(movement_number));
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_MOVEMENT_TOTAL, FAAM_METADATA_INTEGER,
+                          movement_total, sizeof(movement_total));
+    assert_metadata_entry(demuxer, FAAM_METADATA_KEY_SHOW_WORK_MOVEMENT, FAAM_METADATA_INTEGER,
+                          show_work_movement, sizeof(show_work_movement));
     faam_track_info info = { .struct_size = sizeof(info) };
     assert(faam_demuxer_get_track_info(demuxer, 0, &info) == FAAM_OK);
     assert(info.total_frames == 2 && info.timescale == 44100);

@@ -70,30 +70,19 @@ static faam_status append_bytes(uint8_t **buffer, uint32_t *length,
     return FAAM_OK;
 }
 
-static bool is_modeled_type(const char type[4]) {
-    static const char modeled[][4] = {
-        {'\251', 't', 'o', 'o'}, {'\251', 'A', 'R', 'T'}, {'s', 'o', 'a', 'r'}, {'\251', 'w', 'r', 't'}, {'s', 'o', 'c', 'o'},
-        {'\251', 'n', 'a', 'm'}, {'s', 'o', 'n', 'm'}, {'\251', 'a', 'l', 'b'}, {'s', 'o', 'a', 'l'}, {'a', 'A', 'R', 'T'},
-        {'s', 'o', 'a', 'a'}, {'\251', 'g', 'e', 'n'}, {'g', 'n', 'r', 'e'}, {'\251', 'd', 'a', 'y'}, {'\251', 'c', 'm', 't'},
-        {'c', 'p', 'i', 'l'}, {'t', 'r', 'k', 'n'}, {'d', 'i', 's', 'k'}
-    };
-    for (size_t i = 0; i < sizeof(modeled) / sizeof(modeled[0]); i++) {
-        if (!memcmp(type, modeled[i], 4)) return true;
-    }
-    return false;
-}
-
-faam_status faam_update_tags_stream(const faam_io *caller_io, const faam_metadata *caller_meta, uint32_t flags)
+faam_status faam_update_metadata_stream(const faam_io *caller_io, const faam_metadata_entry *entries,
+                                        uint32_t count, uint32_t flags)
 {
     faam_io loaded;
     const faam_io *io = &loaded;
-    if (!caller_io || !caller_meta || !faam_io_load(&loaded, caller_io) ||
-        caller_meta->struct_size < FAAM_METADATA_BASELINE || (flags & ~(uint32_t)FAAM_TAG_UPDATE_CLEAR))
-        return FAAM_ERR_INVALID_ARG;
-    faam_metadata meta_copy;
-    faam_copy_in(&meta_copy, sizeof(meta_copy), caller_meta, caller_meta->struct_size);
-    const faam_metadata *meta = &meta_copy;
+    if (!caller_io || !faam_io_load(&loaded, caller_io) || (flags & ~(uint32_t)FAAM_METADATA_UPDATE_CLEAR))
+        return FAAM_ERR_INVALID_ARGUMENT;
+    const faam_entry_list metadata = { .entries = entries, .count = count };
+    const faam_entry_list *meta = &metadata;
     if (!io->read || !io->write || !io->seek || !io->tell) return FAAM_ERR_UNSUPPORTED;
+
+    faam_status validation = faam_metadata_entries_validate(meta->entries, meta->count);
+    if (validation != FAAM_OK) return validation;
 
     faam_atom_ref moov, mdat;
     uint64_t file_size = 0;
@@ -126,54 +115,30 @@ faam_status faam_update_tags_stream(const faam_io *caller_io, const faam_metadat
     if (found == -2) return FAAM_ERR_UNSUPPORTED;
     if (found < 0) return FAAM_ERR_IO_READ;
 
-    uint8_t *smpb = NULL;
-    uint32_t smpb_len = 0;
     uint8_t *extra_buf = NULL;
     uint32_t extra_len = 0, extra_cap = 0;
 
-    if (ilst.size >= 8 && !(flags & FAAM_TAG_UPDATE_CLEAR)) {
-        uint32_t covr_count = 0;
-        for (uint64_t pos = ilst.offset + 8; pos + 8 <= ilst.offset + ilst.size;) {
+    if (ilst.size >= 8 && !(flags & FAAM_METADATA_UPDATE_CLEAR)) {
+        for (uint64_t pos = ilst.offset + 8; pos < ilst.offset + ilst.size;) {
+            if (ilst.offset + ilst.size - pos < 8) { FreeMemory(extra_buf); return FAAM_ERR_BAD_CONTAINER; }
             uint8_t hdr[8];
             if (!io->seek(io->user_data, pos) || faam_io_read_full(io, hdr, 8) != 8) {
-                FreeMemory(smpb); FreeMemory(extra_buf); return FAAM_ERR_IO_READ;
+                FreeMemory(extra_buf); return FAAM_ERR_IO_READ;
             }
             uint32_t size = read_u32_be(hdr);
-            if (size < 8 || size > ilst.offset + ilst.size - pos) break;
+            if (size == 1) { FreeMemory(extra_buf); return FAAM_ERR_UNSUPPORTED; }
+            if (size < 8 || size > ilst.offset + ilst.size - pos) { FreeMemory(extra_buf); return FAAM_ERR_BAD_CONTAINER; }
 
-            char type[4];
-            memcpy(type, hdr + 4, 4);
-
-            if (!memcmp(type, "----", 4)) {
-                uint8_t *atom = NULL;
-                faam_status st = read_atom(io, pos, size, &atom);
-                if (st != FAAM_OK) {
-                    FreeMemory(smpb); FreeMemory(extra_buf); return st;
-                }
-                bool apple = false, name = false;
-                for (uint32_t off = 8; off + 12 <= size;) {
-                    uint32_t sub = read_u32_be(atom + off);
-                    if (sub < 12 || sub > size - off) break;
-                    if (!memcmp(atom + off + 4, "mean", 4) && sub == 28 &&
-                        !memcmp(atom + off + 12, "com.apple.iTunes", 16)) apple = true;
-                    if (!memcmp(atom + off + 4, "name", 4) && sub == 20 &&
-                        !memcmp(atom + off + 12, "iTunSMPB", 8)) name = true;
-                    off += sub;
-                }
-                if (apple && name) {
-                    if (!smpb) { smpb = atom; smpb_len = size; atom = NULL; }
-                }
-                if (atom) FreeMemory(atom);
-            } else if ((!memcmp(type, "covr", 4) && ++covr_count > 1) ||
-                       (memcmp(type, "covr", 4) && !is_modeled_type(type))) {
-                uint8_t *atom = NULL;
-                faam_status st = read_atom(io, pos, size, &atom);
-                if (st == FAAM_OK)
-                    st = append_bytes(&extra_buf, &extra_len, &extra_cap, atom, size);
-                FreeMemory(atom);
-                if (st != FAAM_OK) {
-                    FreeMemory(smpb); FreeMemory(extra_buf); return st;
-                }
+            uint8_t *atom = NULL;
+            faam_status st = read_atom(io, pos, size, &atom);
+            if (st != FAAM_OK) {
+                FreeMemory(extra_buf); return st;
+            }
+            if (!faam_metadata_matches_atom(meta, atom, size))
+                st = append_bytes(&extra_buf, &extra_len, &extra_cap, atom, size);
+            FreeMemory(atom);
+            if (st != FAAM_OK) {
+                FreeMemory(extra_buf); return st;
             }
 
             pos += size;
@@ -181,17 +146,28 @@ faam_status faam_update_tags_stream(const faam_io *caller_io, const faam_metadat
     }
 
     uint32_t ilst_len;
-    faam_status build = faam_write_ilst_ext(meta, NULL, smpb, smpb_len, extra_buf, extra_len, NULL, NULL, &ilst_len);
-    if (build != FAAM_OK) { FreeMemory(smpb); FreeMemory(extra_buf); return build; }
-    if (ilst_len > UINT32_MAX - MFULL_PREFIX) { FreeMemory(smpb); FreeMemory(extra_buf); return FAAM_ERR_UNSUPPORTED; }
+    faam_status build = faam_write_ilst(meta, NULL, extra_buf, extra_len, NULL, NULL, &ilst_len);
+    if (build != FAAM_OK) { FreeMemory(extra_buf); return build; }
+    /* The shared resizer cannot represent 1..7 leftover bytes as a sibling
+     * free box. Keep ilst structurally valid by adding a small free child,
+     * growing by eight bytes instead of absorbing stale bytes into ilst. */
+    if (ilst.size > ilst_len && ilst.size - ilst_len < 8) {
+        uint8_t padding[16] = {0};
+        uint32_t length = 8 + (uint32_t)(ilst.size - ilst_len);
+        write_u32_be(padding, length); memcpy(padding + 4, "free", 4);
+        build = append_bytes(&extra_buf, &extra_len, &extra_cap, padding, length);
+        if (build != FAAM_OK) { FreeMemory(extra_buf); return build; }
+        if (ilst_len > UINT32_MAX - length) { FreeMemory(extra_buf); return FAAM_ERR_UNSUPPORTED; }
+        ilst_len += length;
+    }
+    if (ilst_len > UINT32_MAX - MFULL_PREFIX) { FreeMemory(extra_buf); return FAAM_ERR_UNSUPPORTED; }
     /* A new meta needs its version/flags and handler ahead of the ilst; an existing
      * meta already has them, so the same buffer serves both by offset. */
     uint8_t *buf = (uint8_t *)AllocMemory(MFULL_PREFIX + ilst_len);
-    if (!buf) { FreeMemory(smpb); FreeMemory(extra_buf); return FAAM_ERR_INSUFFICIENT_MEM; }
+    if (!buf) { FreeMemory(extra_buf); return FAAM_ERR_INSUFFICIENT_MEM; }
     uint8_t *ilst_buf = buf + MFULL_PREFIX;
     ilst_buffer buffer = {ilst_buf, 0};
-    build = faam_write_ilst_ext(meta, NULL, smpb, smpb_len, extra_buf, extra_len, append_ilst, &buffer, &ilst_len);
-    FreeMemory(smpb);
+    build = faam_write_ilst(meta, NULL, extra_buf, extra_len, append_ilst, &buffer, &ilst_len);
     FreeMemory(extra_buf);
     if (build != FAAM_OK) { FreeMemory(buf); return build; }
 

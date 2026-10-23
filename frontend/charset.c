@@ -80,45 +80,36 @@ void cli_init_console(void)
 #endif
 }
 
-static const char *id3_genres[] = {
-    "Blues", "Classic Rock", "Country", "Dance",
-    "Disco", "Funk", "Grunge", "Hip-Hop",
-    "Jazz", "Metal", "New Age", "Oldies",
-    "Other", "Pop", "R&B", "Rap",
-    "Reggae", "Rock", "Techno", "Industrial",
-    "Alternative", "Ska", "Death Metal", "Pranks",
-    "Soundtrack", "Euro-Techno", "Ambient", "Trip-Hop",
-    "Vocal", "Jazz+Funk", "Fusion", "Trance",
-    "Classical", "Instrumental", "Acid", "House",
-    "Game", "Sound Clip", "Gospel", "Noise",
-    "Alternative Rock", "Bass", "Soul", "Punk",
-    "Space", "Meditative", "Instrumental Pop", "Instrumental Rock",
-    "Ethnic", "Gothic", "Darkwave", "Techno-Industrial",
-    "Electronic", "Pop-Folk", "Eurodance", "Dream",
-    "Southern Rock", "Comedy", "Cult", "Gangsta",
-    "Top 40", "Christian Rap", "Pop/Funk", "Jungle",
-    "Native US", "Cabaret", "New Wave", "Psychadelic",
-    "Rave", "Showtunes", "Trailer", "Lo-Fi",
-    "Tribal", "Acid Punk", "Acid Jazz", "Polka",
-    "Retro", "Musical", "Rock & Roll", "Hard Rock",
-    "Folk", "Folk-Rock", "National Folk", "Swing",
-    "Fast Fusion", "Bebob", "Latin", "Revival",
-    "Celtic", "Bluegrass", "Avantgarde", "Gothic Rock",
-    "Progressive Rock", "Psychedelic Rock", "Symphonic Rock", "Slow Rock",
-    "Big Band", "Chorus", "Easy Listening", "Acoustic",
-    "Humour", "Speech", "Chanson", "Opera",
-    "Chamber Music", "Sonata", "Symphony", "Booty Bass",
-    "Primus", "Porn Groove", "Satire", "Slow Jam",
-    "Club", "Tango", "Samba", "Folklore",
-    "Ballad", "Power Ballad", "Rhythmic Soul", "Freestyle",
-    "Duet", "Punk Rock", "Drum Solo", "Acapella",
-    "Euro-House", "Dance Hall", "Goa", "Drum & Bass",
-    "Club - House", "Hardcore", "Terror", "Indie",
-    "BritPop", "Negerpunk", "Polsk Punk", "Beat",
-    "Christian Gangsta Rap", "Heavy Metal", "Black Metal", "Crossover",
-    "Contemporary Christian", "Christian Rock", "Merengue", "Salsa",
-    "Thrash Metal", "Anime", "JPop", "Synthpop",
-    "Unknown"
+/* ID3v1 genres 0-147, then the Winamp extension to 191. */
+static const char *const id3_genres[] = {
+    "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk", "Grunge", "Hip-Hop", "Jazz",
+    "Metal", "New Age", "Oldies", "Other", "Pop", "R&B", "Rap", "Reggae", "Rock", "Techno",
+    "Industrial", "Alternative", "Ska", "Death Metal", "Pranks", "Soundtrack", "Euro-Techno",
+    "Ambient", "Trip-Hop", "Vocal", "Jazz+Funk", "Fusion", "Trance", "Classical",
+    "Instrumental", "Acid", "House", "Game", "Sound Clip", "Gospel", "Noise",
+    "Alternative Rock", "Bass", "Soul", "Punk", "Space", "Meditative", "Instrumental Pop",
+    "Instrumental Rock", "Ethnic", "Gothic", "Darkwave", "Techno-Industrial", "Electronic",
+    "Pop-Folk", "Eurodance", "Dream", "Southern Rock", "Comedy", "Cult", "Gangsta Rap", "Top 40",
+    "Christian Rap", "Pop/Funk", "Jungle", "Native American", "Cabaret", "New Wave", "Psychedelic",
+    "Rave", "Showtunes", "Trailer", "Lo-Fi", "Tribal", "Acid Punk", "Acid Jazz", "Polka",
+    "Retro", "Musical", "Rock & Roll", "Hard Rock", "Folk", "Folk-Rock", "National Folk",
+    "Swing", "Fast Fusion", "Bebop", "Latin", "Revival", "Celtic", "Bluegrass", "Avantgarde",
+    "Gothic Rock", "Progressive Rock", "Psychedelic Rock", "Symphonic Rock", "Slow Rock",
+    "Big Band", "Chorus", "Easy Listening", "Acoustic", "Humour", "Speech", "Chanson", "Opera",
+    "Chamber Music", "Sonata", "Symphony", "Booty Bass", "Primus", "Porn Groove", "Satire",
+    "Slow Jam", "Club", "Tango", "Samba", "Folklore", "Ballad", "Power Ballad",
+    "Rhythmic Soul", "Freestyle", "Duet", "Punk Rock", "Drum Solo", "A Cappella", "Euro-House",
+    "Dance Hall", "Goa", "Drum & Bass", "Club-House", "Hardcore", "Terror", "Indie",
+    "BritPop", "Afro-Punk", "Polsk Punk", "Beat", "Christian Gangsta Rap", "Heavy Metal",
+    "Black Metal", "Crossover", "Contemporary Christian", "Christian Rock", "Merengue",
+    "Salsa", "Thrash Metal", "Anime", "JPop", "Synthpop", "Abstract", "Art Rock", "Baroque",
+    "Bhangra", "Big Beat", "Breakbeat", "Chillout", "Downtempo", "Dub", "EBM", "Eclectic",
+    "Electro", "Electroclash", "Emo", "Experimental", "Garage", "Global", "IDM", "Illbient",
+    "Industro-Goth", "Jam Band", "Krautrock", "Leftfield", "Lounge", "Math Rock",
+    "New Romantic", "Nu-Breakz", "Post-Punk", "Post-Rock", "Psytrance", "Shoegaze",
+    "Space Rock", "Trop Rock", "World Music", "Neoclassical", "Audiobook", "Audio Theatre",
+    "Neue Deutsche Welle", "Podcast", "Indie Rock", "G-Funk", "Dubstep", "Garage Rock",
+    "Psybient"
 };
 
 /* Smart-quote substitution (Notes, Pages, word processors) turns straight
@@ -195,7 +186,46 @@ bool parse_index_arg(const char *arg, uint16_t *n, uint16_t *total)
     return sscanf(arg, "%hu/%hu", n, total) >= 1;
 }
 
-bool parse_genre(const char *arg, uint16_t *genre_id, const char **genre_name)
+/* Spellings other taggers use for a genre, matched like the table names. */
+static const struct { const char *name; unsigned index; } id3_genre_aliases[] = {
+    { "Alt. Rock", 40 }, { "AlternRock", 40 }, { "Gangsta", 59 }, { "Native US", 64 },
+    { "Psychadelic", 67 }, { "Bebob", 85 }, { "Acapella", 123 }
+};
+
+/* Lower-cased letters and digits only, with '&' read as "and", so "Hip Hop", "hip-hop" and
+ * "HIPHOP" are one genre and so are "R&B" and "R and B". */
+static bool genre_key(const char *s, char *key, size_t size)
+{
+    size_t n = 0;
+    for (; *s; s++)
+    {
+        const char *add = NULL;
+        char one[2] = { 0, 0 };
+        if (*s == '&')
+            add = "and";
+        else if ((*s >= 'A' && *s <= 'Z') || (*s >= 'a' && *s <= 'z') || (*s >= '0' && *s <= '9'))
+        {
+            one[0] = (*s >= 'A' && *s <= 'Z') ? (char)(*s - 'A' + 'a') : *s;
+            add = one;
+        }
+        if (!add)
+            continue;
+        size_t len = strlen(add);
+        if (n + len >= size)
+            return false;
+        memcpy(key + n, add, len);
+        n += len;
+    }
+    key[n] = 0;
+    return n > 0;
+}
+
+const char *id3_genre_name(unsigned index)
+{
+    return index < sizeof(id3_genres) / sizeof(id3_genres[0]) ? id3_genres[index] : NULL;
+}
+
+bool parse_genre(const char *arg, const char **genre_name)
 {
     if (!arg || !*arg)
         return false;
@@ -210,37 +240,42 @@ bool parse_genre(const char *arg, uint16_t *genre_id, const char **genre_name)
         }
     }
 
-    int max_genres = (int)(sizeof(id3_genres) / sizeof(id3_genres[0]));
-
     if (is_num)
     {
-        int g = atoi(arg);
-        if (g < 0 || g > 255)
-            return false;
-        if (genre_id) *genre_id = (uint16_t)(g + 1);
-        if (genre_name)
+        unsigned index = 0;
+        for (const char *p = arg; *p; p++)
         {
-            if (g >= 0 && g < max_genres)
-                *genre_name = id3_genres[g];
-            else
-                *genre_name = NULL;
+            index = index * 10 + (unsigned)(*p - '0');
+            if (index >= sizeof(id3_genres) / sizeof(id3_genres[0]))
+                return false;
         }
+        const char *name = id3_genre_name(index);
+        if (genre_name) *genre_name = name;
         return true;
     }
 
-    for (int i = 0; i < max_genres; i++)
+    char want[64], have[64];
+    if (genre_key(arg, want, sizeof(want)))
     {
-        if (strcasecmp(arg, id3_genres[i]) == 0)
+        for (unsigned i = 0; i < sizeof(id3_genres) / sizeof(id3_genres[0]); i++)
         {
-            if (genre_id) *genre_id = (uint16_t)(i + 1);
-            if (genre_name) *genre_name = id3_genres[i];
-            return true;
+            if (genre_key(id3_genres[i], have, sizeof(have)) && strcmp(want, have) == 0)
+            {
+                if (genre_name) *genre_name = id3_genres[i];
+                return true;
+            }
+        }
+        for (unsigned i = 0; i < sizeof(id3_genre_aliases) / sizeof(id3_genre_aliases[0]); i++)
+        {
+            if (genre_key(id3_genre_aliases[i].name, have, sizeof(have)) && strcmp(want, have) == 0)
+            {
+                if (genre_name) *genre_name = id3_genres[id3_genre_aliases[i].index];
+                return true;
+            }
         }
     }
 
-    /* genre_id 0 suppresses the numeric 'gnre' atom; the text atom still
-       carries whatever the user typed. */
-    if (genre_id) *genre_id = 0;
+    /* Anything else is stored as the user typed it. */
     if (genre_name) *genre_name = arg;
     return true;
 }

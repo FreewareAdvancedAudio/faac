@@ -42,8 +42,12 @@ const char *parse_tag_arg(char *arg, char **name, char **value);
    the argument has none. Returns false when n is missing. */
 bool parse_index_arg(const char *arg, uint16_t *n, uint16_t *total);
 
-/* Parse a genre argument (number or string name) into ID3v1 genre_id and genre_name */
-bool parse_genre(const char *arg, uint16_t *genre_id, const char **genre_name);
+/* Name of ID3v1 genre `index` (0-191), NULL beyond it. */
+const char *id3_genre_name(unsigned index);
+
+/* Parse a genre argument (index 0-191 or name) into its text; a name that is not an ID3v1 genre
+ * passes through as typed, an index outside the table is rejected. */
+bool parse_genre(const char *arg, const char **genre_name);
 
 #ifdef _WIN32
 #include <windows.h>

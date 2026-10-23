@@ -26,7 +26,6 @@
 #include <stdbool.h>
 
 #include "faam.h"
-#include "cover_art.h"
 
 /* Ports override both hooks with -D or a force-included header. Detect the
  * overrides first: libc realloc must never see a custom allocator's block. */
@@ -106,8 +105,8 @@ typedef struct {
 struct faam_demuxer {
     faam_status error;
     faam_owned_string *strings;
-    faam_custom_tag *custom_tags;
-    uint32_t custom_tags_cap;
+    faam_metadata_entry *entries;
+    uint32_t entries_cap;
     faam_io io;
 
     faam_gapless_info gapless;
@@ -118,9 +117,7 @@ struct faam_demuxer {
     uint64_t elst_segment_duration;
     bool has_elst;
 
-    faam_metadata metadata;
-    uint8_t *cover_art_owned; /* heap copy backing metadata.cover_art; the ilst-source
-                                * buffer it was parsed from is freed right after open() */
+    uint32_t num_entries; /* ilst values collected in entries */
     faam_chapter *chapters;  /* heap, sized by the chpl atom (at most 255) */
     uint32_t num_chapters;
 
@@ -186,12 +183,19 @@ typedef struct {
     uint64_t frag_dts0; /* decode time at the start of the open fragment (tfdt) */
 } faam_muxer_track;
 
+/* A caller's entry array with its count, strided by the first entry's struct_size. */
+typedef struct {
+    const faam_metadata_entry *entries;
+    uint32_t count;
+} faam_entry_list;
+
 typedef struct {
     uint32_t creation_time;
     bool constant_rate;
     bool is_m4b;
     faam_gapless_info gapless;
-    const faam_metadata *metadata; /* the caller's, read when the ilst is written */
+    const faam_metadata_entry *metadata; /* the caller's, read when the ilst is written */
+    uint32_t num_metadata;
     const faam_chapter *chapters;
     uint32_t num_chapters;
 } faam_muxer_settings;
@@ -236,13 +240,9 @@ struct faam_muxer {
 };
 
 typedef faam_status (*faam_bytes_writer)(void *user, const void *data, uint32_t bytes);
-faam_status faam_write_ilst(const faam_metadata *metadata, const faam_gapless_info *gapless,
-                            const uint8_t *smpb, uint32_t smpb_bytes,
+faam_status faam_write_ilst(const faam_entry_list *metadata, const faam_gapless_info *gapless,
+                            const uint8_t *extra, uint32_t extra_bytes,
                             faam_bytes_writer write, void *user, uint32_t *out_size);
-faam_status faam_write_ilst_ext(const faam_metadata *metadata, const faam_gapless_info *gapless,
-                                const uint8_t *smpb, uint32_t smpb_bytes,
-                                const uint8_t *extra, uint32_t extra_bytes,
-                                faam_bytes_writer write, void *user, uint32_t *out_size);
 
 /* Input structs from a caller: zero a library-sized copy, then take the bytes both sides know.
  * The caller's struct_size must be at least the baseline of the struct (checked by the caller). */
@@ -251,19 +251,27 @@ static inline void faam_copy_in(void *dst, size_t dst_size, const void *src, uin
     memcpy(dst, src, src_size < dst_size ? src_size : dst_size);
 }
 
+static inline const faam_metadata_entry *faam_metadata_entry_at(const faam_metadata_entry *base, uint32_t i) {
+    return (const faam_metadata_entry *)((const uint8_t *)base + (size_t)i * base->struct_size);
+}
+faam_status faam_metadata_entries_validate(const faam_metadata_entry *entries, uint32_t count);
+/* Inspect a complete ilst child. Returns false for an invalid freeform identity. */
+bool faam_metadata_atom_key(const uint8_t *atom, uint32_t size, uint32_t *key,
+                             const uint8_t **mean, uint32_t *mean_len,
+                             const uint8_t **name, uint32_t *name_len);
+bool faam_metadata_matches_atom(const faam_entry_list *meta, const uint8_t *atom, uint32_t size);
+
 /* Output structs to a caller: write at most the caller's struct_size bytes. */
 static inline void faam_copy_out(void *dst, uint32_t dst_size, const void *src, size_t src_size) {
     memcpy(dst, src, dst_size < src_size ? dst_size : src_size);
     memcpy(dst, &dst_size, sizeof(dst_size)); /* struct_size stays the caller's */
 }
 
-/* Element i of a caller's array of chapters or custom tags, strided by the first element's size. */
+/* Element i of a caller's chapter array, strided by the first element's size. */
 static inline const faam_chapter *faam_chapter_at(const faam_chapter *base, uint32_t i) {
     return (const faam_chapter *)((const uint8_t *)base + (size_t)i * base->struct_size);
 }
-static inline const faam_custom_tag *faam_custom_tag_at(const faam_custom_tag *base, uint32_t i) {
-    return (const faam_custom_tag *)((const uint8_t *)base + (size_t)i * base->struct_size);
-}
+
 
 /* The library's copy of a caller's io; false when the caller's struct is below the baseline. */
 static inline bool faam_io_load(faam_io *dst, const faam_io *src) {

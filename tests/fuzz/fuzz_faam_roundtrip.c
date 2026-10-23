@@ -103,10 +103,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     char title_str[16];
     snprintf(title_str, sizeof(title_str), "Title_%u", mode);
-    faam_metadata meta;
-    memset(&meta, 0, sizeof(meta)); meta.struct_size = sizeof(meta);
-    meta.title = title_str;
-    cfg.metadata = &meta;
+    faam_metadata_entry meta_entry = {
+        .struct_size = sizeof(faam_metadata_entry),
+        .key = FAAM_METADATA_KEY_TITLE,
+        .data_type = FAAM_METADATA_UTF8,
+        .data = title_str,
+        .data_bytes = (uint32_t)strlen(title_str),
+    };
+
+    cfg.metadata = &meta_entry; cfg.num_metadata = 1;
 
     static const uint8_t asc_sample[2] = { 0x11, 0x90 }; /* 48kHz stereo LC */
 
@@ -132,7 +137,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     ms.size = 0;
     ms.pos = 0;
 
-    faam_io io = { sizeof(faam_io), &ms, rw_read, rw_write, rw_seek, rw_tell, rw_flush };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &ms, .read = rw_read, .write = rw_write, .seek = rw_seek, .tell = rw_tell, .flush = rw_flush };
 
     faam_muxer *m = NULL;
     if (faam_muxer_open(&cfg, &io, &m) != FAAM_OK || !m) {
@@ -191,11 +196,20 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         }
     }
 
-    faam_metadata demux_meta; demux_meta.struct_size = sizeof(demux_meta);
-    if (faam_demuxer_get_metadata(d, &demux_meta) == FAAM_OK) {
-        if (!demux_meta.title || strcmp(demux_meta.title, title_str) != 0) {
-            abort();
+    uint32_t demux_meta_count = 0;
+    if (faam_demuxer_get_num_metadata(d, &demux_meta_count) == FAAM_OK) {
+        /* Gapless muxing adds an iTunSMPB entry next to the title. */
+        bool found_title = false;
+        for (uint32_t i = 0; i < demux_meta_count; i++) {
+            faam_metadata_entry demux_entry = { .struct_size = sizeof(demux_entry) };
+            if (faam_demuxer_get_metadata_entry(d, i, &demux_entry) != FAAM_OK) abort();
+            if (demux_entry.key != FAAM_METADATA_KEY_TITLE) continue;
+            if (demux_entry.data_type != FAAM_METADATA_UTF8 ||
+                demux_entry.data_bytes != strlen(title_str) ||
+                memcmp(demux_entry.data, title_str, demux_entry.data_bytes) != 0) abort();
+            found_title = true;
         }
+        if (!found_title) abort();
     }
 
     uint32_t demuxed_count = 0;

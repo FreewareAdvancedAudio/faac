@@ -81,4 +81,14 @@ faad output.m4a -o decoded.wav      # decode
 faad -i output.m4a                  # show stream info
 faam -i output.aac -o output.m4a    # mux ADTS into MP4
 faam tag output.m4a --title Song    # edit tags in place
+faam tag output.m4a --lyrics-file lyrics.txt --bpm 120
 ```
+
+FAAM supports embedded UTF-8 lyrics, grouping, copyright, descriptions, and
+classical work/movement tags. `libfaam` exposes a single typed metadata API for
+native and freeform atoms, including binary and repeated values; new keys need
+no library changes. See the [metadata API](docs/libfaam.md#reading-and-editing-tags-without-remuxing)
+and `faam --help-tag`.
+
+Run checks with `meson test -C build --print-errorlogs`. Python enables CLI
+checks; installing Mutagen also enables the optional interoperability test.

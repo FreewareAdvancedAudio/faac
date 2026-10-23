@@ -166,7 +166,7 @@ static const help_t help_mp4[] = {
     {"--title <name>",
      "Set title/track name", NULL},
     {"--genre <number|name>",
-     "Set genre number or name", NULL},
+     "Set genre number (0-191) or name", NULL},
     {"--album <name>",
      "Set album/performer", NULL},
     {"--albumartist <name>",
@@ -184,7 +184,7 @@ static const help_t help_mp4[] = {
     {"--year <number>",
      "Set year", NULL},
     {"--cover-art <filename>",
-     "Read cover art from <filename>",
+     "Read cover art (GIF, JPEG, PNG or BMP) from <filename>",
      "Supported image formats are GIF, JPEG, PNG, and BMP."},
     {"--comment <string>",
      "Set comment", NULL},
@@ -617,7 +617,7 @@ int main(int argc, char *argv[])
                 dieMessage = "Wrong disc number.\n";
             break;
         case GENRE_FLAG:
-            if (!parse_genre(trim_quotes_and_spaces(optarg), &opts.metadata.genre_id, &opts.metadata.genre))
+            if (!parse_genre(trim_quotes_and_spaces(optarg), &opts.metadata.genre))
                 dieMessage = "Genre number out of range.\n";
             break;
         case YEAR_FLAG:
@@ -764,7 +764,7 @@ int main(int argc, char *argv[])
                         opts.metadata.album_sort || opts.metadata.album_artist ||
                         opts.metadata.album_artist_sort || opts.metadata.composer ||
                         opts.metadata.composer_sort || opts.metadata.year ||
-                        opts.metadata.comment || opts.metadata.genre_id ||
+                        opts.metadata.comment ||
                         opts.metadata.genre || opts.metadata.track ||
                         opts.metadata.disc || opts.metadata.compilation ||
                         opts.metadata.language || opts.art_data ||

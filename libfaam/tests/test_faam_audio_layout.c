@@ -49,8 +49,12 @@ static void run_case(unsigned count, bool constant, bool wide_time, bool faststa
     CHECK(faam_muxer_config_init(&cfg, sizeof(cfg)) == FAAM_OK);
     cfg.flags = constant ? FAAM_MUXER_CONSTANT_RATE : 0;
     cfg.creation_time = 0;
-    faam_metadata metadata = { .struct_size = sizeof(metadata) }; metadata.encoder = "FAAC test";
-    cfg.metadata = &metadata;
+    const char encoder[] = "FAAC test";
+    faam_metadata_entry metadata_entry = { .struct_size = sizeof(metadata_entry),
+        .key = FAAM_METADATA_KEY_ENCODER, .data_type = FAAM_METADATA_UTF8,
+        .data = encoder, .data_bytes = sizeof(encoder) - 1 };
+
+    cfg.metadata = &metadata_entry; cfg.num_metadata = 1;
     faam_track_config track = { .struct_size = sizeof(track) };
     track.struct_size = sizeof(track); track.track_type = FAAM_TRACK_AUDIO;
     track.codec_id = FAAM_CODEC_AAC; track.timescale = track.sample_rate = 44100;

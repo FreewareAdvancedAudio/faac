@@ -544,10 +544,12 @@ def run_all(t, d):
     check(r.returncode == 0, "tag with every tag option")
     mux_tags = info_tags(t.faam_run(["info", "mt.m4a"], d).stdout)
     tag_tags = info_tags(t.faam_run(["info", "bare.m4a"], d).stdout)
-    check(mux_tags == tag_tags and "Title: The Title" in mux_tags and "Title Sort: Title, The" in mux_tags and
+    check("Title: The Title" in mux_tags and "Title: The Title" in tag_tags and
+          "Title Sort: Title, The" in mux_tags and "Title Sort: Title, The" in tag_tags and
           "Genre: Rock" in mux_tags and "Track: 3/12" in mux_tags and "Disc: 1/2" in mux_tags and
-          "Cover Art: present" in mux_tags and "my key = my value" in mux_tags and "other = second" in mux_tags and
-          "Compilation: Yes" in mux_tags, "mux-time tags equal tag-command tags and show in info:\n" + mux_tags)
+          "Cover Art: present" in mux_tags and "my key: my value" in mux_tags and "other: second" in mux_tags and
+          "Compilation: 1" in mux_tags and "Compilation: 1" in tag_tags,
+          "mux-time/tag-command metadata shows in info:\nMUX:\n" + mux_tags + "\nTAG:\n" + tag_tags)
     check(read(os.path.join(d, "mt.m4a")).count(b"GIF89a") == 1, "GIF cover stored as given")
     for cover in ("c.png", "c.jpg", "alt.jpg", "c.bmp"):
         r = t.faam_run(["-i", "lc.aac", "-o", "cv.m4a", "--cover-art", cover, "--overwrite"], d)
@@ -571,26 +573,36 @@ def run_all(t, d):
     # separators and trimming like faac
     r = t.faam_run(["-i", "lc.aac", "-o", "sep.m4a", "--tag", " 'k1' = ' v1 ' ", "--tag", "k2,v=2", "--tag", "k3=v,3"], d)
     st = t.faam_run(["info", "sep.m4a"], d).stdout.decode()
-    check("k1 = v1" in st and "k2 = v=2" in st and "k3 = v,3" in st, "--tag splits on the first of = or , and trims quotes:\n" + st)
+    check("k1: v1" in st and "k2: v=2" in st and "k3: v,3" in st, "--tag splits on the first of = or , and trims quotes:\n" + st)
     for args in (["--tag", "=x"], ["--tag", "k="]):
         r = t.faam_run(["-i", "lc.aac", "-o", "badtag.m4a"] + args, d)
         check(r.returncode == 1 and no_output(d, "badtag.m4a"), f"{args} rejected")
     # no cap on custom tags: 20 survive a mux and a later tag edit, from faam or from faac
     many = sum((["--tag", f"k{i}=v{i}"] for i in range(20)), [])
     r = t.faam_run(["-i", "lc.aac", "-o", "many.m4a"] + many, d)
-    check(r.returncode == 0 and t.faam_run(["info", "many.m4a"], d).stdout.count(b" = ") == 20, "20 custom tags at mux time")
+    count_named_tags = lambda data: sum(line.startswith(b"  k") for line in data.splitlines())
+    check(r.returncode == 0 and count_named_tags(t.faam_run(["info", "many.m4a"], d).stdout) == 20, "20 custom tags at mux time")
     t.faam_run(["tag", "many.m4a", "--title", "x"], d)
-    check(t.faam_run(["info", "many.m4a"], d).stdout.count(b" = ") == 20, "tag keeps all 20 custom tags")
+    check(count_named_tags(t.faam_run(["info", "many.m4a"], d).stdout) == 20, "tag keeps all 20 custom tags")
     t.run(t.faac, ["-v0", "-q", "100", "-o", "many_faac.m4a"] + many + ["s.wav"], d)
     t.faam_run(["tag", "many_faac.m4a", "--title", "x"], d)
-    check(t.faam_run(["info", "many_faac.m4a"], d).stdout.count(b" = ") == 20, "tag keeps the 20 custom tags of a faac file")
+    check(count_named_tags(t.faam_run(["info", "many_faac.m4a"], d).stdout) == 20, "tag keeps the 20 custom tags of a faac file")
     # genre as number, free text
-    for g, want in (("17", "Genre: Rock"), ("Jazz", "Genre: Jazz"), ("NotAGenre", "Genre: NotAGenre")):
+    for g, want in (("17", "Genre: Rock"), ("Jazz", "Genre: Jazz"), ("NotAGenre", "Genre: NotAGenre"),
+                    ("150", "Genre: Baroque"), ("191", "Genre: Psybient"), ("hip hop", "Genre: Hip-Hop"),
+                    ("Alt. Rock", "Genre: Alternative Rock")):
         t.faam_run(["-i", "lc.aac", "-o", "g.m4a", "--genre", g, "--overwrite"], d)
         gi = t.faam_run(["info", "g.m4a"], d).stdout.decode()
-        check(want in gi, f"genre {g} -> {want}")
-    r = t.faam_run(["tag", "g.m4a", "--genre", "256"], d)
-    check(r.returncode == 1, "tag --genre out of range")
+        check(want in gi and gi.count("Genre:") == 1, f"genre {g} -> {want}, once")
+        t.run(t.faac, ["-v0", "-q", "100", "-o", "gf.m4a", "--genre", g, "--overwrite", "s.wav"], d)
+        gi = t.faam_run(["info", "gf.m4a"], d).stdout.decode()
+        check(want in gi and gi.count("Genre:") == 1, f"faac genre {g} -> {want}, once")
+    for g in ("192", "255", "256"):
+        check(t.faam_run(["tag", "g.m4a", "--genre", g], d).returncode == 1, f"tag --genre {g} out of range")
+        check(t.faam_run(["-i", "lc.aac", "-o", "gbad.m4a", "--genre", g], d).returncode == 1
+              and no_output(d, "gbad.m4a"), f"faam --genre {g} out of range")
+        rf = t.run(t.faac, ["-v0", "-o", "gbad.m4a", "--genre", g, "s.wav"], d)
+        check(rf.returncode == 1 and no_output(d, "gbad.m4a"), f"faac --genre {g} out of range")
     # shared option table: faac and faam agree on the validation they share
     for args in (["--track", "x"], ["--disc", "z"], ["--cover-art", "nope.png"], ["--cover-art", "bad.bmp"], ["--tag", "novalue"]):
         rf = t.run(t.faac, ["-v0", "-o", "e.m4a", "--overwrite"] + args + ["s.wav"], d)
@@ -608,7 +620,7 @@ def run_all(t, d):
     r = t.faam_run(["tag", "t.m4a", "--title", "One", "--tag", "a=b"], d)
     r = t.faam_run(["tag", "t.m4a", "--album", "Two", "--titlesort", "TS"], d)
     ti = info_tags(t.faam_run(["info", "t.m4a"], d).stdout)
-    check("Title: One" in ti and "Album: Two" in ti and "Title Sort: TS" in ti and "a = b" in ti, "tag updates accumulate:\n" + ti)
+    check("Title: One" in ti and "Album: Two" in ti and "Title Sort: TS" in ti and "a: b" in ti, "tag updates accumulate:\n" + ti)
     r = t.faam_run(["tag", "t.m4a", "--remove", "title", "--remove", "titlesort", "--remove", "custom"], d)
     ti = info_tags(t.faam_run(["info", "t.m4a"], d).stdout)
     check("Title:" not in ti and "Title Sort" not in ti and "a = b" not in ti and "Album: Two" in ti, "tag --remove:\n" + ti)

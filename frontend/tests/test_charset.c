@@ -47,13 +47,48 @@ static void test_tag_whitespace_and_quotes(void)
 
 static void test_genre_and_indices(void)
 {
-    uint16_t genre_id;
     const char *genre_name;
-    assert(parse_genre("jAzZ", &genre_id, &genre_name));
-    assert(genre_id == 9 && strcmp(genre_name, "Jazz") == 0);
-    assert(parse_genre("17", &genre_id, &genre_name));
-    assert(genre_id == 18 && strcmp(genre_name, "Rock") == 0);
-    assert(!parse_genre("", &genre_id, &genre_name));
+    assert(parse_genre("jAzZ", &genre_name) && strcmp(genre_name, "Jazz") == 0);
+    assert(parse_genre("17", &genre_name) && strcmp(genre_name, "Rock") == 0);
+    assert(parse_genre("0017", &genre_name) && strcmp(genre_name, "Rock") == 0);
+    assert(!parse_genre("", &genre_name) && !parse_genre(NULL, &genre_name));
+
+    /* The table runs 0 to 191 with no gaps and no repeats, and every name parses back to itself. */
+    assert(strcmp(id3_genre_name(0), "Blues") == 0 && strcmp(id3_genre_name(147), "Synthpop") == 0);
+    assert(strcmp(id3_genre_name(148), "Abstract") == 0 && strcmp(id3_genre_name(191), "Psybient") == 0);
+    assert(strcmp(id3_genre_name(67), "Psychedelic") == 0 && strcmp(id3_genre_name(85), "Bebop") == 0);
+    assert(strcmp(id3_genre_name(123), "A Cappella") == 0 && strcmp(id3_genre_name(133), "Afro-Punk") == 0);
+    assert(id3_genre_name(192) == NULL);
+    for (unsigned i = 0; i < 192; i++)
+    {
+        const char *name = id3_genre_name(i);
+        assert(name && *name);
+        char number[8];
+        snprintf(number, sizeof(number), "%u", i);
+        assert(parse_genre(number, &genre_name) && genre_name == name);
+        assert(parse_genre(name, &genre_name) && genre_name == name);
+        for (unsigned j = 0; j < i; j++)
+            assert(strcmp(id3_genre_name(j), name) != 0);
+    }
+
+    /* Spelling variants find the same genre. */
+    static const struct { const char *typed; unsigned index; } same[] = {
+        { "hip hop", 7 }, { "HIPHOP", 7 }, { "  hip-hop ", 7 }, { "R and B", 14 }, { "r&b", 14 },
+        { "Rock and Roll", 78 }, { "rock & roll", 78 }, { "Jazz Funk", 29 }, { "club house", 128 },
+        { "Alt. Rock", 40 }, { "AlternRock", 40 }, { "alternative rock", 40 }, { "Gangsta", 59 },
+        { "Native US", 64 }, { "Psychadelic", 67 }, { "Bebob", 85 }, { "Acapella", 123 },
+        { "a cappella", 123 }, { "afro punk", 133 }, { "Fast-Fusion", 84 }
+    };
+    for (unsigned i = 0; i < sizeof(same) / sizeof(same[0]); i++)
+        assert(parse_genre(same[i].typed, &genre_name) && genre_name == id3_genre_name(same[i].index));
+    assert(parse_genre("Rock-ish", &genre_name) && strcmp(genre_name, "Rock-ish") == 0);
+    assert(parse_genre("&", &genre_name) && strcmp(genre_name, "&") == 0);
+
+    /* Numbers past the table are refused, other text passes through as typed. */
+    assert(!parse_genre("192", &genre_name) && !parse_genre("255", &genre_name));
+    assert(!parse_genre("256", &genre_name) && !parse_genre("99999999999999999999", &genre_name));
+    assert(parse_genre("NotAGenre", &genre_name) && strcmp(genre_name, "NotAGenre") == 0);
+    assert(parse_genre("-1", &genre_name) && strcmp(genre_name, "-1") == 0);
 
     uint16_t track = 0;
     uint16_t total = 0;

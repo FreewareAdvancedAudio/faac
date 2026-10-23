@@ -168,11 +168,15 @@ enum faac_input_format {
  * ALWAYS initialize with faac_params_init() before setting fields: it zeroes
  * the whole struct (including padding) and stamps struct_size, which is how the
  * library stays compatible as this struct grows. Construct one from scratch and
- * open() will reject it. The struct only ever grows by appending named fields.
+ * open() will reject it. New storage is added by appending named fields.
  *
  * Maintainers: appended fields must start at or after the previous sizeof(struct),
  * never in its tail padding: struct_size cannot distinguish a new field there
- * from padding supplied by an older caller.
+ * from padding supplied by an older caller. Explicit reserved fields must be zero
+ * on input and are zero on output until assigned a future meaning. They may be
+ * reused with their storage and offsets preserved and zero retaining the previous
+ * behavior. Callers must check library support before requesting new behavior.
+ * Existing field offsets, meanings and struct alignment, and baseline sizes stay fixed.
  */
 typedef struct faac_params {
     uint32_t                struct_size;   /* set by faac_params_init() */
@@ -187,7 +191,7 @@ typedef struct faac_params {
     bool                    use_lfe;       /* treat the last channel as LFE (>= 6 ch) */
     bool                    use_tns;       /* temporal noise shaping                   */
     bool                    use_pns;       /* perceptual noise substitution            */
-    uint8_t                 reserved[1];   /* explicit pad; must remain 0              */
+    uint8_t                 reserved[1];   /* reserved for future use; currently zero              */
 
     uint32_t                bit_rate;      /* target bits/sec PER CHANNEL; 0 = use quant_quality */
     uint32_t                bandwidth;     /* cutoff in Hz; 0 = from bit_rate, the curve's top in VBR (full band above 48 kHz at default quality or higher) */

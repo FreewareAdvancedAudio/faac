@@ -30,7 +30,7 @@ extern "C" {
 #endif
 
 /* Read a --cover-art file into a malloc'd buffer after checking its size and
-   that it is a GIF, JPEG, PNG or BMP using the library
+   that it is a GIF, JPEG, PNG or BMP using the shared frontend
    detector. Returns NULL, or an error message
    (newline-terminated); *data stays NULL on error. */
 const char *load_cover_art(const char *path, uint8_t **data, uint64_t *size);

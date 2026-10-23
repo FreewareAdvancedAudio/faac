@@ -188,30 +188,28 @@ static void test_virtual_mux(void) {
     faam_track_config invalid = { .struct_size = sizeof(invalid) };
     invalid.track_type = FAAM_TRACK_VIDEO; invalid.codec_id = FAAM_CODEC_H264;
 #ifdef FAAM_MUXER_VIDEO
-    st = test_append_track(&cfg, cfg_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARG);
+    st = test_append_track(&cfg, cfg_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARGUMENT);
 #else
     st = test_append_track(&cfg, cfg_tracks, &invalid, NULL); assert(st == FAAM_ERR_NOT_BUILT);
 #endif
     invalid.track_type = FAAM_TRACK_AUDIO; invalid.codec_id = FAAM_CODEC_GENERIC;
-    st = test_append_track(&cfg, cfg_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARG);
+    st = test_append_track(&cfg, cfg_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARGUMENT);
     faam_muxer_config validation = cfg;
     faam_track_config validation_tracks[8];
     invalid.codec_id = FAAM_CODEC_AAC; invalid.track_id = 77;
     st = test_append_track(&validation, validation_tracks, &invalid, NULL); assert(st == FAAM_OK);
-    st = test_append_track(&validation, validation_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARG);
+    st = test_append_track(&validation, validation_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARGUMENT);
     for (unsigned i = 0; i < 7; i++) {
         invalid.track_id = i + 100;
         st = test_append_track(&validation, validation_tracks, &invalid, NULL); assert(st == FAAM_OK);
     }
-    st = test_append_track(&validation, validation_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARG);
-    faam_custom_tag custom_tags[16] = {0};
-    for (uint32_t i = 0; i < 16; i++) custom_tags[i].struct_size = sizeof(custom_tags[i]);
-    for (unsigned i = 0; i < 16; i++) {
-        custom_tags[i].name = "test";
-        custom_tags[i].value = "value";
-    }
-    faam_metadata metadata = { .struct_size = sizeof(metadata) }; metadata.num_custom_tags = 16; metadata.custom_tags = custom_tags;
-    cfg.metadata = &metadata;
+    st = test_append_track(&validation, validation_tracks, &invalid, NULL); assert(st == FAAM_ERR_INVALID_ARGUMENT);
+    faam_metadata_entry custom_tags[16] = {0};
+    for (uint32_t i = 0; i < 16; i++) custom_tags[i] = (faam_metadata_entry){
+        .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_FREEFORM,
+        .data_type = FAAM_METADATA_UTF8, .name = "test", .data = "value", .data_bytes = 5 };
+
+    cfg.metadata = custom_tags; cfg.num_metadata = 16;
     invalid.track_id = 77; invalid.timescale = 44100;
     st = test_append_track(&cfg, cfg_tracks, &invalid, NULL); assert(st == FAAM_OK);
     faam_gapless_info gap = { .struct_size = sizeof(gap), .encoder_delay = 10 };
@@ -220,7 +218,7 @@ static void test_virtual_mux(void) {
     uint8_t payload = 0;
     for (unsigned mode = 0; mode < 7; mode++) {
         virtual_file v = {0};
-        faam_io io = { sizeof(faam_io), &v, NULL, virtual_write, virtual_seek, virtual_tell, NULL };
+        faam_io io = { .struct_size = sizeof(faam_io), .user_data = &v, .read = NULL, .write = virtual_write, .seek = virtual_seek, .tell = virtual_tell, .flush = NULL };
         if (mode == 6) io.seek = NULL;
         faam_muxer *m;
         if (mode == 6) {
@@ -299,7 +297,7 @@ int main(void)
     FILE *fout = fopen("test_output.mp4", "wb");
     assert(fout != NULL);
 
-    faam_io io_out = { sizeof(faam_io), fout, file_read_cb, file_write_cb, file_seek_cb, file_tell_cb, NULL };
+    faam_io io_out = { .struct_size = sizeof(faam_io), .user_data = fout, .read = file_read_cb, .write = file_write_cb, .seek = file_seek_cb, .tell = file_tell_cb, .flush = NULL };
 
     faam_muxer_config cfg;
     faam_track_config cfg_tracks[8];
@@ -387,7 +385,7 @@ int main(void)
     FILE *fin = fopen("test_output.mp4", "rb");
     assert(fin != NULL);
 
-    faam_io io_in = { sizeof(faam_io), fin, file_read_cb, file_write_cb, file_seek_cb, file_tell_cb, NULL };
+    faam_io io_in = { .struct_size = sizeof(faam_io), .user_data = fin, .read = file_read_cb, .write = file_write_cb, .seek = file_seek_cb, .tell = file_tell_cb, .flush = NULL };
 
     faam_demuxer *d = NULL;
     st = faam_demuxer_open(NULL, &io_in, &d);
@@ -457,7 +455,7 @@ int main(void)
 
         FILE *gf = fopen(path, "wb");
         assert(gf != NULL);
-        faam_io gio = { sizeof(faam_io), gf, file_read_cb, file_write_cb, file_seek_cb, file_tell_cb, NULL };
+        faam_io gio = { .struct_size = sizeof(faam_io), .user_data = gf, .read = file_read_cb, .write = file_write_cb, .seek = file_seek_cb, .tell = file_tell_cb, .flush = NULL };
 
         faam_muxer_config gcfg;
         faam_track_config gcfg_tracks[8];
@@ -525,32 +523,34 @@ int main(void)
 
         /* Force real growth: this dwarfs the tiny default ilst (just an
          * encoder tag) the muxer writes. */
-        faam_metadata big_meta;
-        memset(&big_meta, 0, sizeof(big_meta)); big_meta.struct_size = sizeof(big_meta);
-        big_meta.title = "A Reasonably Long Test Title For Growth";
-        big_meta.artist = "Test Artist Name";
-        big_meta.album = "Test Album Name";
-        big_meta.track_num = 3;
-        big_meta.track_total = 12;
-        big_meta.compilation = true;
-        faam_custom_tag big_tags[16] = {0};
-        for (uint32_t i = 0; i < 16; i++) big_tags[i].struct_size = sizeof(big_tags[i]);
+        uint8_t track_value[8] = { 0, 0, 0, 3, 0, 12, 0, 0 };
+        uint8_t compilation = 1;
+        faam_metadata_entry big_entries[21] = {0};
+        big_entries[0] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_TITLE,
+            .data_type = FAAM_METADATA_UTF8, .data = "A Reasonably Long Test Title For Growth", .data_bytes = 39 };
+        big_entries[1] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_ARTIST,
+            .data_type = FAAM_METADATA_UTF8, .data = "Test Artist Name", .data_bytes = 16 };
+        big_entries[2] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_ALBUM,
+            .data_type = FAAM_METADATA_UTF8, .data = "Test Album Name", .data_bytes = 15 };
+        big_entries[3] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_TRACK,
+            .data_type = FAAM_METADATA_INTEGER, .data = track_value, .data_bytes = sizeof(track_value) };
+        big_entries[4] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry), .key = FAAM_METADATA_KEY_COMPILATION,
+            .data_type = FAAM_METADATA_INTEGER, .data = &compilation, .data_bytes = 1 };
         char big_names[16][32];
         char big_value[256];
         memset(big_value, 'x', sizeof(big_value) - 1);
         big_value[sizeof(big_value) - 1] = '\0';
-        big_meta.num_custom_tags = 16;
-        big_meta.custom_tags = big_tags;
-        for (uint32_t i = 0; i < big_meta.num_custom_tags; i++) {
+        for (uint32_t i = 0; i < 16; i++) {
             snprintf(big_names[i], sizeof(big_names[i]), "custom_tag_%u", i);
-            big_tags[i].name = big_names[i];
-            big_tags[i].value = big_value;
+            big_entries[i + 5] = (faam_metadata_entry){ .struct_size = sizeof(faam_metadata_entry),
+                .key = FAAM_METADATA_KEY_FREEFORM, .data_type = FAAM_METADATA_UTF8,
+                .name = big_names[i], .data = big_value, .data_bytes = sizeof(big_value) - 1 };
         }
 
         FILE *tf = fopen(path, "r+b");
         assert(tf != NULL);
-        faam_io tio = { sizeof(faam_io), tf, file_read_cb, file_write_cb, file_seek_cb, file_tell_cb, NULL };
-        st = faam_update_tags_stream(&tio, &big_meta, 0);
+        faam_io tio = { .struct_size = sizeof(faam_io), .user_data = tf, .read = file_read_cb, .write = file_write_cb, .seek = file_seek_cb, .tell = file_tell_cb, .flush = NULL };
+        st = faam_update_metadata_stream(&tio, big_entries, 21, 0);
         assert(st == FAAM_OK);
         faam_chapter updated[2] = {0};
         for (uint32_t i = 0; i < 2; i++) updated[i].struct_size = sizeof(updated[i]);
@@ -579,14 +579,13 @@ int main(void)
             /* Shrinking back onto the now-larger slot should pad in place
              * (free atom), not shrink the file -- confirms the cheap path
              * still runs instead of an unnecessary tail shift. */
-            faam_metadata small_meta;
-            memset(&small_meta, 0, sizeof(small_meta)); small_meta.struct_size = sizeof(small_meta);
-            small_meta.title = "T";
+            faam_metadata_entry small_entry = { .struct_size = sizeof(small_entry),
+                .key = FAAM_METADATA_KEY_TITLE, .data_type = FAAM_METADATA_UTF8, .data = "T", .data_bytes = 1 };
 
             FILE *tf2 = fopen(path, "r+b");
             assert(tf2 != NULL);
-            faam_io tio2 = { sizeof(faam_io), tf2, file_read_cb, file_write_cb, file_seek_cb, file_tell_cb, NULL };
-            st = faam_update_tags_stream(&tio2, &small_meta, 0);
+            faam_io tio2 = { .struct_size = sizeof(faam_io), .user_data = tf2, .read = file_read_cb, .write = file_write_cb, .seek = file_seek_cb, .tell = file_tell_cb, .flush = NULL };
+            st = faam_update_metadata_stream(&tio2, &small_entry, 1, 0);
             assert(st == FAAM_OK);
             fclose(tf2);
 
@@ -609,7 +608,7 @@ int main(void)
          */
         FILE *df = fopen(path, "rb");
         assert(df != NULL);
-        faam_io dio = { sizeof(faam_io), df, file_read_cb, file_write_cb, file_seek_cb, file_tell_cb, NULL };
+        faam_io dio = { .struct_size = sizeof(faam_io), .user_data = df, .read = file_read_cb, .write = file_write_cb, .seek = file_seek_cb, .tell = file_tell_cb, .flush = NULL };
 
         faam_demuxer *dd = NULL;
         st = faam_demuxer_open(NULL, &dio, &dd);

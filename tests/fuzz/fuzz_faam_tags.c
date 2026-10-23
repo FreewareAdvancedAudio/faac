@@ -14,7 +14,7 @@
  */
 
 /*
- * libFuzzer harness for faam_update_tags_stream and faam_update_chapters_stream.
+ * libFuzzer harness for faam_update_metadata_stream and faam_update_chapters_stream.
  */
 #include <stdint.h>
 #include <stdlib.h>
@@ -104,22 +104,55 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     ms.size = file_len;
     ms.pos = 0;
 
-    faam_io io = { sizeof(faam_io), &ms, rw_read, rw_write, rw_seek, rw_tell, NULL };
+    faam_io io = { .struct_size = sizeof(faam_io), .user_data = &ms, .read = rw_read, .write = rw_write, .seek = rw_seek, .tell = rw_tell, .flush = NULL };
 
     /* Construct fuzz-derived metadata */
     char title_buf[32];
     snprintf(title_buf, sizeof(title_buf), "FuzzTitle_%u", cfg_byte);
 
-    faam_metadata meta;
-    memset(&meta, 0, sizeof(meta)); meta.struct_size = sizeof(meta);
-    meta.title = title_buf;
-    meta.artist = (cfg_byte & 1) ? "FuzzArtist" : NULL;
-    meta.genre_code = (cfg_byte & 2) ? 17 : 0;
-    meta.compilation = (cfg_byte & 4) != 0;
+    faam_metadata_entry entries[4];
+    uint32_t num_entries = 0;
+    entries[num_entries++] = (faam_metadata_entry){
+        .struct_size = sizeof(faam_metadata_entry),
+        .key = FAAM_METADATA_KEY_TITLE,
+        .data_type = FAAM_METADATA_UTF8,
+        .data = title_buf,
+        .data_bytes = (uint32_t)strlen(title_buf),
+    };
+    if (cfg_byte & 1) {
+        static const char artist[] = "FuzzArtist";
+        entries[num_entries++] = (faam_metadata_entry){
+            .struct_size = sizeof(faam_metadata_entry),
+            .key = FAAM_METADATA_KEY_ARTIST,
+            .data_type = FAAM_METADATA_UTF8,
+            .data = artist,
+            .data_bytes = sizeof(artist) - 1,
+        };
+    }
+    if (cfg_byte & 2) {
+        static const uint8_t genre_code[] = { 0, 17 };
+        entries[num_entries++] = (faam_metadata_entry){
+            .struct_size = sizeof(faam_metadata_entry),
+            .key = FAAM_METADATA_KEY_GENRE_CODE,
+            .data_type = FAAM_METADATA_INTEGER,
+            .data = genre_code,
+            .data_bytes = sizeof(genre_code),
+        };
+    }
+    if (cfg_byte & 4) {
+        static const uint8_t compilation = 1;
+        entries[num_entries++] = (faam_metadata_entry){
+            .struct_size = sizeof(faam_metadata_entry),
+            .key = FAAM_METADATA_KEY_COMPILATION,
+            .data_type = FAAM_METADATA_INTEGER,
+            .data = &compilation,
+            .data_bytes = sizeof(compilation),
+        };
+    }
 
     int tracks = tracks_of(&io, &ms);
     ms.pos = 0;
-    faam_status st = faam_update_tags_stream(&io, &meta, 0);
+    faam_status st = faam_update_metadata_stream(&io, entries, num_entries, 0);
     if (st == FAAM_OK && tracks > 0 && tracks_of(&io, &ms) != tracks) abort();
 
     /* Construct fuzz-derived chapters */

@@ -80,7 +80,7 @@ faam_status faam_engine_mux_adts_frames(faam_muxer *m, uint32_t track_id, FILE *
                 p.channel_cfg == first->channel_cfg && p.raw_blocks == 0 && len >= hlen)
                 read_target = len;
         }
-        if (read_target > sizeof(buf)) { result = FAAM_ERR_INVALID_ARG; break; }
+        if (read_target > sizeof(buf)) { result = FAAM_ERR_INVALID_ARGUMENT; break; }
         bool attempted_read = read_target > buf_len;
         size_t n = attempted_read ? fread(buf + buf_len, 1, read_target - buf_len, f) : 0;
         buf_len += n;

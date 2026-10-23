@@ -179,7 +179,7 @@ faam_status faam_atom_resize(const faam_io *io,
                               const faam_atom_ref *moov, const faam_atom_ref *mdat,
                               uint64_t file_size)
 {
-    if (new_size > INT32_MAX) return FAAM_ERR_INVALID_ARG; /* one write of it must fit the callback's int32_t */
+    if (new_size > INT32_MAX) return FAAM_ERR_INVALID_ARGUMENT; /* one write of it must fit the callback's int32_t */
     if (new_size <= old_size) {
         uint64_t diff = old_size - new_size;
         if (!io->seek(io->user_data, atom_offset)) return FAAM_ERR_IO_WRITE;
