@@ -113,8 +113,11 @@ static void add_tags(MP4Track *out, faam_demuxer *d, uint32_t count)
         else if (e.key == FAAM_METADATA_KEY_GENRE_CODE && e.data_bytes == 2 && read_u16_be(v)) {
             const char *name = id3_genre_name(read_u16_be(v) - 1u);
             char value[32];
-            if (!name) snprintf(value, sizeof(value), "#%u", read_u16_be(v) - 1u);
-            add_tag(out, "Genre", name ? name : value);
+            if (!name) {
+                snprintf(value, sizeof(value), "#%u", read_u16_be(v) - 1u);
+                name = value;
+            }
+            add_tag(out, "Genre", name);
         } else if (e.data_type == FAAM_METADATA_UTF8 && !memchr(v, 0, e.data_bytes)) {
             const char *label = e.name;
             if (label && !strcmp(label, "iTunSMPB") && (!e.mean || !strcmp(e.mean, "com.apple.iTunes"))) continue;
