@@ -268,11 +268,12 @@ unsigned int SbrContextGetXOverBandwidth(SBRContext *sbrCtx)
                            (2 * SBR_QMF_BANDS_64));
 }
 
-int SbrContextUpdateConfig(SBRContext *sCtx, int channels, unsigned long bitrate)
+int SbrContextUpdateConfig(SBRContext *sCtx, int channels, unsigned long bitrate, int aacObjectType, int rateLimited)
 {
-    /* ApplyConfig reaches this once, after creating the context. */
     sCtx->sbrInfo = SbrInit(channels, sCtx->fullSampleRate, bitrate);
-    return sCtx->sbrInfo != NULL;
+    if (!sCtx->sbrInfo) return 0;
+    PsConfigure(sCtx->sbrInfo, IsPS(aacObjectType), bitrate, rateLimited);
+    return 1;
 }
 
 void SbrContextProcessFrame(SBRContext *sCtx, int numChannels, const bool *isLfe, int realPerCh, int flushTick, float *inputFifo[MAX_CHANNELS], float *heHalfRate[MAX_CHANNELS])
@@ -313,9 +314,11 @@ void SbrContextProcessFrame(SBRContext *sCtx, int numChannels, const bool *isLfe
          * claims SBR_NUM_TIME_SLOTS, so normalising a short frame over fewer slots
          * would inflate its levels, and the QMF-overlap save below reads the last
          * SBR_QMF_OVL_LEN_64 samples -- behind the buffer for a short frame. */
+        if (PsIsActive(sCtx->sbrInfo)) PsPrepareCarrier(sCtx, fullPtrs);
         SbrAnalyze(sCtx->signalAnalysis, fullPtrs, numChannels, isLfe, 2 * FRAME_LEN, sCtx->sbrInfo);
         SbrEncode(sCtx->sbrInfo, fullPtrs, numChannels, isLfe, 2 * FRAME_LEN, sCtx->signalAnalysis, fd);
         /* Dual-rate decimation: produces the halved-rate core signal. */
+        if (PsIsActive(sCtx->sbrInfo)) PsCommitCarrier(sCtx, rs->fullRate[0]);
         Resample(rs, 2 * FRAME_LEN);
     }
 }
@@ -358,16 +361,14 @@ static inline float fast_log2(float x)
     return (float)(exp - 127) + (float)(m * (FAST_LOG2_A - FAST_LOG2_B * m));
 }
 
-/* 64-band subband energy analysis using a 64-point complex FFT.
+/* 64-band subband analysis using a 64-point complex FFT.
  * Leverages conjugate symmetry to extract two 64-point real-subsequence
  * DFTs from one complex transform, reducing FLOPs by ~50% compared to
- * a standard 128-point implementation. Phase info is discarded as the
- * SBR bitstream only transmits envelope magnitudes. */
-void SbrQmfAnalysis(SBRInfo *sbr, const float * restrict ovl_pos, float * restrict energy, int kx, int k2)
+ * a standard 128-point implementation. y receives the FFT spectrum. */
+static inline void qmf_transform(const SBRInfo *sbr, const float *ovl_pos, float *y)
 {
-    float x[128], y[128];
+    float x[128];
     float * restrict xr = x, * restrict xi = x + 64;
-    const float * restrict yr = y, * restrict yi = y + 64;
     /* The filter is symmetric except at offsets 128/512 and 256/384.
      * Compute the contiguous polyphase outputs before the complex rotation,
      * using the FFT output buffer as workspace. */
@@ -390,23 +391,49 @@ void SbrQmfAnalysis(SBRInfo *sbr, const float * restrict ovl_pos, float * restri
         xi[m] = -(a * sbr->twidSin[m] + b * sbr->twidCos[m]);
     }
     fft(x, y, FFT_LOGM_SHORT);
+}
+
+/* Band k of the complex QMF output. */
+static inline void qmf_band(const SBRInfo *sbr, const float *y, int k, float *re, float *im)
+{
+    const float * restrict yr = y, * restrict yi = y + 64;
+    int kr = 63 - k;
+    /* Separate the two real-subsequence DFTs by conjugate symmetry. */
+    float Ar = 0.5f * (yr[k] + yr[kr]);
+    float Ai = 0.5f * (yi[kr] - yi[k]);
+    float Br = -0.5f * (yi[k] + yi[kr]);
+    float Bi = 0.5f * (yr[kr] - yr[k]);
+    /* Sr = Ar + w_k_real * Br - w_k_imag * Bi
+     * Si = Ai + w_k_real * Bi + w_k_imag * Br */
+    float wr = sbr->oddCos[k];
+    float wi = sbr->oddSin[k];
+    float Sr = Ar + wr * Br - wi * Bi;
+    float Si = Ai + wr * Bi + wi * Br;
+    *re = Sr;
+    *im = Si;
+}
+
+#if FAAC_ENCODER_PS
+void SbrQmfAnalysisComplex(SBRInfo *sbr, const float *ovl_pos, float *real, float *imag, int kx, int k2)
+{
+    float y[128];
+    qmf_transform(sbr, ovl_pos, y);
+    for (int k = kx; k < k2; k++) qmf_band(sbr, y, k, &real[k], &imag[k]);
+}
+#endif
+
+/* The SBR bitstream only transmits envelope magnitudes, so the energy path
+ * discards phase. */
+void SbrQmfAnalysis(SBRInfo *sbr, const float * restrict ovl_pos, float * restrict energy, int kx, int k2)
+{
+    float y[128];
+    qmf_transform(sbr, ovl_pos, y);
     for (int k = kx; k < k2; k++) {
-        int kr = 63 - k;
-        /* Separate the two real-subsequence DFTs by conjugate symmetry. */
-        float Ar = 0.5f * (yr[k] + yr[kr]);
-        float Ai = 0.5f * (yi[kr] - yi[k]);
-        float Br = -0.5f * (yi[k] + yi[kr]);
-        float Bi = 0.5f * (yr[kr] - yr[k]);
-        /* Sr = Ar + w_k_real * Br - w_k_imag * Bi
-         * Si = Ai + w_k_real * Bi + w_k_imag * Br */
-        float wr = sbr->oddCos[k];
-        float wi = sbr->oddSin[k];
-        float Sr = Ar + wr * Br - wi * Bi;
-        float Si = Ai + wr * Bi + wi * Br;
+        float Sr, Si;
+        qmf_band(sbr, y, k, &Sr, &Si);
         energy[k] += Sr * Sr + Si * Si;
     }
 }
-
 
 static void sbr_adopt_envelope_grid(const struct SignalAnalysis *sa, SbrFrameData *fd)
 {
@@ -461,7 +488,12 @@ void SbrEncode(SBRInfo *sbr, float *timeDomain[MAX_CHANNELS], int numChannels, c
             memcpy(sbr->ch[ch].qmfOvl64, timeDomain[ch] + numSamples - SBR_QMF_HIST_LEN, SBR_QMF_HIST_LEN * sizeof(float));
 
     sbr_adopt_envelope_grid(sa, fd);
-    sbr_quantize_envelopes(sbr, numChannels, isLfe, sa, fd);
+    int coreChannels = numChannels;
+    if (PsIsActive(sbr)) {
+        PsAnalyze(sbr, sa, fd);
+        coreChannels = 1;
+    }
+    sbr_quantize_envelopes(sbr, coreChannels, isLfe, sa, fd);
 
 #ifdef FAAC_STATS
     g_faacStats.sbrFrames++;
@@ -479,4 +511,3 @@ void SbrEncode(SBRInfo *sbr, float *timeDomain[MAX_CHANNELS], int numChannels, c
 /* SBR bitstream writer. Emits the SBR fill element payload into the bitstream.
  * Replays the write sequence into a counting sink during rate control to
  * ensure accurate bit budget allocation. */
-
