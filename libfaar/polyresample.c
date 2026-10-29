@@ -1134,13 +1134,19 @@ static size_t polyresample_process_single(faar_resampler * restrict r, const flo
     if (in_samples && in_count > 0) {
         if (reserve_history(r, in_count, false)) return 0;
 
-        if (r->channels == 2) {
+        if (r->channels == 1) {
+            for (size_t i = 0; i < in_count; ++i)
+                r->hist[0][r->hist_len + i] = (faar_sample_t)in_samples[i];
+#if MAX_CHANNELS >= 2
+        } else if (r->channels == 2) {
             faar_sample_t * restrict h0 = r->hist[0] + r->hist_len;
             faar_sample_t * restrict h1 = r->hist[1] + r->hist_len;
             for (size_t i = 0; i < in_count; i++) {
                 h0[i] = (faar_sample_t)in_samples[i * 2 + 0];
                 h1[i] = (faar_sample_t)in_samples[i * 2 + 1];
             }
+#endif
+#if MAX_CHANNELS >= 6
         } else if (r->channels == 6) {
             faar_sample_t * restrict h0 = r->hist[0] + r->hist_len;
             faar_sample_t * restrict h1 = r->hist[1] + r->hist_len;
@@ -1156,9 +1162,7 @@ static size_t polyresample_process_single(faar_resampler * restrict r, const flo
                 h4[i] = (faar_sample_t)in_samples[i * 6 + 4];
                 h5[i] = (faar_sample_t)in_samples[i * 6 + 5];
             }
-        } else if (r->channels == 1) {
-            for (size_t i = 0; i < in_count; ++i)
-                r->hist[0][r->hist_len + i] = (faar_sample_t)in_samples[i];
+#endif
         } else {
             for (size_t i = 0; i < in_count; i++) {
                 for (uint16_t c = 0; c < r->channels; c++) {

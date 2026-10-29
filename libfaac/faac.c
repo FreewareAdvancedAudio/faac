@@ -236,8 +236,10 @@ static faac_status validate_params(const faac_params *p, uint64_t *bit_rate_per_
     return FAAC_OK;
 }
 
-FAACAPI faac_status faac_encoder_open(const faac_params *config, faac_encoder **out)
+FAACAPI faac_status faac_encoder_open(const faac_params *caller, faac_encoder **out)
 {
+    faac_params local;
+    const faac_params *config = &local;
     faacEncStruct *h;
     faacEncConfiguration *cfg;
     unsigned long inSamples = 0, maxOut = 0;
@@ -248,12 +250,16 @@ FAACAPI faac_status faac_encoder_open(const faac_params *config, faac_encoder **
     if (!out)
         return FAAC_ERR_INVALID_ARGUMENT;
     *out = NULL;
-    if (!config)
+    if (!caller)
         return FAAC_ERR_INVALID_ARGUMENT;
 
     /* Not sizeof(faac_params): that grows, which would reject older callers. */
-    if (config->struct_size < PARAMS_BASELINE_SIZE)
+    if (caller->struct_size < PARAMS_BASELINE_SIZE)
         return FAAC_ERR_INVALID_ARGUMENT;
+
+    /* Read only what the caller's struct_size covers; appended fields stay zero. */
+    memset(&local, 0, sizeof(local));
+    memcpy(&local, caller, caller->struct_size < sizeof(local) ? caller->struct_size : sizeof(local));
 
     st = validate_params(config, &bit_rate_per_channel);
     if (st != FAAC_OK)
@@ -269,7 +275,11 @@ FAACAPI faac_status faac_encoder_open(const faac_params *config, faac_encoder **
     cfg->mpegVersion   = config->stream_format == FAAC_STREAM_ADTS_MPEG2 ? MPEG2 : MPEG4;
     cfg->aacObjectType = (unsigned int)config->object_type;  /* LOW / HE_V1 / AUTO */
     cfg->jointmode     = (unsigned int)config->stereo_mode;
+#if MAX_CHANNELS >= 6
     cfg->useLfe        = (config->channels == 6 || config->channels == 8) ? 1 : 0;
+#else
+    cfg->useLfe        = 0;
+#endif
     cfg->useTns        = (config->flags & FAAC_FLAG_TNS) ? 1 : 0;
     cfg->bitRate       = (unsigned long)bit_rate_per_channel;
     cfg->bandWidth     = config->bandwidth;
@@ -283,19 +293,31 @@ FAACAPI faac_status faac_encoder_open(const faac_params *config, faac_encoder **
     /* WAVE order must become AAC element order; each entry names the input
      * channel that feeds that output slot. AAC input keeps the identity map
      * faacEncOpen installed. */
+#if MAX_CHANNELS >= 3
     if (config->channel_layout == FAAC_LAYOUT_WAV && config->channels >= 3) {
         static const uint8_t wav_to_aac[][8] = {
             {2, 0, 1},                   /* 3 channels */
+#if MAX_CHANNELS >= 4
             {2, 0, 1, 3},                /* 4 */
+#endif
+#if MAX_CHANNELS >= 5
             {2, 0, 1, 3, 4},             /* 5 */
+#endif
+#if MAX_CHANNELS >= 6
             {2, 0, 1, 4, 5, 3},          /* 6 */
+#endif
+#if MAX_CHANNELS >= 7
             {0},                         /* 7: unsupported */
+#endif
+#if MAX_CHANNELS >= 8
             {2, 0, 1, 6, 7, 4, 5, 3},    /* 8 */
+#endif
         };
         uint32_t i;
         for (i = 0; i < config->channels; i++)
             cfg->channel_map[i] = wav_to_aac[config->channels - 3][i];
     }
+#endif
 
     applied = faacEncApplyConfig(h);
     if (applied != 1) {
