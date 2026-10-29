@@ -205,8 +205,8 @@ typedef struct faac_params {
     uint32_t                flags;         /* FAAC_FLAG_*; unknown bits are rejected */
 
     uint32_t                bit_rate;      /* whole-stream bits/sec; 0 = 64 kbit/s per channel in ABR/CBR, must be 0 in VBR */
-    uint32_t                bandwidth;     /* cutoff in Hz; 0 = from bit_rate, the curve's top in VBR (full band above 48 kHz at default quality or higher) */
-    uint32_t                quality;       /* VBR quality 1..5000; 0 = default; must be 0 in ABR/CBR */
+    uint32_t                bandwidth;     /* cutoff in Hz; 0 = from bit_rate, the curve's top in VBR (full band above 48 kHz at quality 100 or higher) */
+    uint32_t                quality;       /* VBR quality 1..5000, required in VBR; must be 0 in ABR/CBR */
 
     enum faac_stream_format stream_format;
     enum faac_input_format  input_format;

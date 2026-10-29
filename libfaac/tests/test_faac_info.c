@@ -205,6 +205,8 @@ int main(void)
         assert(faac_encoder_get_info(enc, &info) == FAAC_OK);
         assert(info.bit_rate == 0 && info.quality == 100);
         assert(faac_encoder_close(&enc) == FAAC_OK);
+        p.quality = 0; /* VBR has no default quality */
+        assert(faac_encoder_open(&p, &enc) == FAAC_ERR_INVALID_ARGUMENT && !enc);
         p.quality = 5001;
         assert(faac_encoder_open(&p, &enc) == FAAC_ERR_INVALID_ARGUMENT && !enc);
 

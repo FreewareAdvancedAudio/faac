@@ -200,7 +200,7 @@ static faac_status validate_params(const faac_params *p, uint64_t *bit_rate_per_
     *bit_rate_per_channel = bit_rate / p->channels;
     switch (p->rate_control) {
     case FAAC_RC_VBR:
-        if (p->bit_rate || p->quality > 5000)
+        if (p->bit_rate || !p->quality || p->quality > 5000)
             return FAAC_ERR_INVALID_ARGUMENT;
         break;
     case FAAC_RC_ABR:
