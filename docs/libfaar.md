@@ -263,6 +263,7 @@ int main(void) {
     faar_resampler_close(&resampler);
     return status == FAAR_OK ? 0 : 1;
 }
+```
 
 - The example reserves room for the whole result. With smaller output buffers, drain
   queued output with `faar_resampler_process(NULL, 0)` before supplying more input.
@@ -309,7 +310,7 @@ polyphase banks and immutable FFT twiddles. Each stream allocates its own histor
 queues and FFT workspace, and streams can run concurrently. `faar_resampler_open()`
 remains available for standalone streams.
 
-```
+```c
 faar_design *design = NULL;
 faar_resampler *left = NULL, *right = NULL;
 faar_status status = faar_design_open(&config, &design);
