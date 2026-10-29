@@ -25,6 +25,10 @@ int main(void)
 {
     faac_params p;
     faac_encoder *enc = NULL;
+    faac_library_info lib = { .struct_size = sizeof(lib) };
+    assert(faac_get_library_info(&lib) == FAAC_OK);
+    assert(!!(lib.flags & FAAC_LIB_SBR) == FAAC_ENCODER_SBR);
+    assert(!!(lib.flags & FAAC_LIB_PS) == FAAC_ENCODER_PS);
     assert(faac_params_init(&p, sizeof(p)) == FAAC_OK);
     p.sample_rate = 48000;
     p.channels = 1;
@@ -84,7 +88,8 @@ int main(void)
                                              : j == 3 ? FAAC_OBJ_HE_AAC_V1
                                                       : FAAC_OBJ_HE_AAC_V2;
 #else
-            enum faac_object_type expected = bits[j] < 8000 ? FAAC_OBJ_LC : FAAC_OBJ_HE_AAC_V1;
+            enum faac_object_type expected = (bits[j] < 8000 || !(lib.flags & FAAC_LIB_SBR))
+                                             ? FAAC_OBJ_LC : FAAC_OBJ_HE_AAC_V1;
 #endif
             assert(info.object_type == expected);
             assert(faac_encoder_close(&enc) == FAAC_OK && enc == NULL);
@@ -103,7 +108,7 @@ int main(void)
     p.quality = 20;
     assert(faac_encoder_open(&p, &enc) == FAAC_OK);
     assert(faac_encoder_get_info(enc, &info) == FAAC_OK);
-    assert(info.object_type == FAAC_OBJ_HE_AAC_V1);
+    assert(info.object_type == ((lib.flags & FAAC_LIB_SBR) ? FAAC_OBJ_HE_AAC_V1 : FAAC_OBJ_LC));
     assert(faac_encoder_close(&enc) == FAAC_OK);
 #endif
     return 0;

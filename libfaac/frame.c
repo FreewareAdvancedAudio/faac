@@ -193,7 +193,7 @@ int faacEncApplyConfig(faacEncStruct* hEncoder)
             rate_ok = (config->quantqual <= HE_VBR_QUANTQUAL_MAX);
         }
         hEncoder->config.aacObjectType =
-            (rate_ok && hEncoder->sampleRate >= HE_MIN_SAMPLE_RATE &&
+            (FAAC_ENCODER_SBR && rate_ok && hEncoder->sampleRate >= HE_MIN_SAMPLE_RATE &&
              hEncoder->config.mpegVersion != MPEG2) ? HE_V1 : LOW;
 #if FAAC_ENCODER_PS
         /* Keep the adjacent range on HE v1, including rates below its legacy

@@ -98,10 +98,11 @@ FAACAPI faac_status faac_get_library_info(faac_library_info *out_info)
     faacEncGetVersion(&vid, &vcopy);
 
     memset(&info, 0, sizeof(info));
-    info.max_channels   = (uint32_t)MAX_CHANNELS;
     info.version        = vid;
     info.copyright      = vcopy;
+    info.max_channels   = (uint32_t)MAX_CHANNELS;
     info.sbr_decimation = (uint32_t)FAAC_SBR_DECIMATION;
+    info.flags          = (FAAC_ENCODER_SBR ? FAAC_LIB_SBR : 0) | (FAAC_ENCODER_PS ? FAAC_LIB_PS : 0);
 
     /* Write at most the caller's struct_size so a newer library cannot overrun
      * an older, smaller faac_library_info; report the byte count actually set. */
@@ -153,7 +154,10 @@ static faac_status validate_params(const faac_params *p, uint64_t *bit_rate_per_
     if (p->flags & ~(uint32_t)(FAAC_FLAG_TNS | FAAC_FLAG_PNS))
         return FAAC_ERR_INVALID_ARGUMENT;
     switch (p->object_type) {
-        case FAAC_OBJ_AUTO: case FAAC_OBJ_LC: case FAAC_OBJ_HE_AAC_V1:
+        case FAAC_OBJ_HE_AAC_V1:
+            if (!FAAC_ENCODER_SBR) return FAAC_ERR_UNSUPPORTED;
+            break;
+        case FAAC_OBJ_AUTO: case FAAC_OBJ_LC:
             break;
         case FAAC_OBJ_HE_AAC_V2:
             if (!IsPS(p->object_type)) return FAAC_ERR_UNSUPPORTED;

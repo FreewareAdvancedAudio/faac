@@ -78,16 +78,20 @@ library paths when migrating.
 The Meson build writes a `config.h` that every source includes. A build system
 that compiles the sources directly must define the same macros: `PACKAGE`,
 `PACKAGE_VERSION`, `MAX_CHANNELS` (`-Dmax-channels`, default 8), `FAAC_SBR_DECIMATION`
-(`-Dsbr-decimation`, default 1) and `FAAC_STATS` (`-Dstats`). Add `common/` and
-`include/` to the include path. Define `FAAC_BUILDING` when building a Windows DLL.
+(`-Dsbr-decimation`, default 1), `FAAC_ENCODER_SBR` (`-Dencoder-sbr`, default 1),
+`FAAC_ENCODER_PS` (`-Dencoder-ps`, default 0, needs SBR) and `FAAC_STATS` (`-Dstats`).
+An undefined `FAAC_ENCODER_SBR` or `FAAC_ENCODER_PS` is 0 and builds an encoder without
+HE-AAC v1 or v2; in that case leave the SBR sources out as the Meson build does. Add
+`common/` and `include/` to the include path. Define `FAAC_BUILDING` when building a
+Windows DLL.
 
 ## Supported streams
 
 | Feature | Support and requirements |
 |---|---|
 | AAC-LC | Supported by every encoder build; 1024 samples/channel per frame |
-| HE-AAC v1 | Dual-rate SBR; input rate at least 32000 Hz; 2048 samples/channel per frame |
-| HE-AAC v2 | SBR + Parametric Stereo; requires `encoder-ps=true`, stereo input, and input rate at least 32000 Hz; 2048 samples/channel per frame |
+| HE-AAC v1 | Dual-rate SBR; requires `encoder-sbr=true` (the default); input rate at least 32000 Hz; 2048 samples/channel per frame |
+| HE-AAC v2 | SBR + Parametric Stereo; requires `encoder-ps=true` (which needs `encoder-sbr`), stereo input, and input rate at least 32000 Hz; 2048 samples/channel per frame |
 | MAIN, SSR, LTP, LD, ELD, USAC | Unsupported |
 | ADTS | Library supplies each frame's header |
 | RAW AAC | One access unit per emitted frame; MPEG-4 ASC available separately |
@@ -96,8 +100,13 @@ that compiles the sources directly must define the same macros: `PACKAGE`,
 | Channels | 1–6 or 8, within the compiled `max-channels` ceiling; 7 is unsupported |
 | PCM | Interleaved native-endian signed integer or float; see below |
 
-Query `faac_get_library_info()` for `max_channels`, version/copyright and
-`sbr_decimation` (build-time SBR analysis density; 1 is full density).
+Query `faac_get_library_info()` for `max_channels`, version/copyright,
+`sbr_decimation` (build-time SBR analysis density; 1 is full density) and
+`flags`. `flags` follows `FAAC_LIBRARY_INFO_BASELINE`, so check that the returned
+`struct_size` covers it before reading. `FAAC_LIB_SBR` is clear in an LC-only build
+(`-Dencoder-sbr=false`), where `FAAC_OBJ_HE_AAC_V1` returns `FAAC_ERR_UNSUPPORTED`
+and `FAAC_OBJ_AUTO` resolves to LC. `FAAC_LIB_PS` is set only when `-Dencoder-ps=true`
+and SBR are built; otherwise `FAAC_OBJ_HE_AAC_V2` returns `FAAC_ERR_UNSUPPORTED`.
 `max-channels` defaults to 8; `sbr-decimation` defaults to 1.
 Use standard AAC sample rates (8000, 11025, 12000, 16000, 22050, 24000,
 32000, 44100, 48000, 64000, 88200 or 96000 Hz). Validation accepts
@@ -637,6 +646,7 @@ calls and rebuild.
 | `rate_control` with `FAAC_RC_AUTO` as zero | `FAAC_RC_ABR` is zero and the default. `FAAC_RC_AUTO` is gone and the constants are renumbered (ABR 0, VBR 1, CBR 2). VBR needs `bit_rate = 0`. ABR and CBR need `quality = 0`; a `quality` given with a bitrate used to seed the rate loop and is now refused, and a VBR `quality` above 5000 is refused instead of clamped. |
 | per-channel `bit_rate` | **Whole-stream bits/sec; multiply an old value by `channels`.** Zero means 64 kbit/s for every channel. `faac_encoder_info.bit_rate` is whole-stream too, and `peak_bit_rate` must be at least `bit_rate`. |
 | channels above the build's `max-channels` | `faac_encoder_open()` returns `FAAC_ERR_UNSUPPORTED`. A build used to open an encoder with more channels than `faac_library_info.max_channels` reported. |
+| `faac_library_info` field order and `flags` | The members are `struct_size`, `version`, `copyright`, `max_channels`, `sbr_decimation`, `flags`, so recompile; the query writes back the populated size. `FAAC_LIB_SBR` and `FAAC_LIB_PS` say whether HE-AAC v1 and v2 are built. |
 | `use_lfe`, `channel_map`, `channel_map_count` | `channel_layout`: `FAAC_LAYOUT_AAC` (the default) or `FAAC_LAYOUT_WAV`. Six and eight channels always carry an LFE. Any other order is permuted by the caller before encoding. `faac.h` no longer includes `<stdbool.h>`. |
 
 ## ABI compatibility

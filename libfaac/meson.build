@@ -35,15 +35,9 @@ libfaac_src = [
     'quantize.h',
     'ratecontrol.c',
     'ratecontrol.h',
-    'sbr.c',
     'sbr.h',
     'sbr_internal.h',
-    'sbr_bitstream.c',
-    'sbr_huff_tables.c',
-    'sbr_huff_tables.h',
-    'sbr_analysis.c',
     'sbr_analysis.h',
-    'resample.c',
     'resample.h',
     'stereo.c',
     'stereo.h',
@@ -53,8 +47,13 @@ libfaac_src = [
     'util.h',
 ]
 
-if encoder_ps
-    libfaac_src += ['ps.c', 'ps_huff_tables.c', 'ps_huff_tables.h']
+encoder_codec_dep = codec_lc_dep
+if encoder_sbr
+    libfaac_src += files('sbr.c', 'sbr_analysis.c', 'sbr_bitstream.c', 'sbr_huff_tables.c', 'resample.c')
+    encoder_codec_dep = codec_dep
+    if encoder_ps
+        libfaac_src += files('ps.c', 'ps_huff_tables.c', 'ps_huff_tables.h')
+    endif
 endif
 
 libfaac = disabler()
@@ -62,7 +61,7 @@ libfaac = disabler()
 common_args = {
     'include_directories' : ['..', '../include', common_inc],
     'c_args' : c_args + ['-DCOMMON_PREFIX=faac_'],
-    'dependencies' : [libm, codec_dep],
+    'dependencies' : [libm, encoder_codec_dep],
     'link_with' : quantize_simd_libs,
     'install' : true,
     'gnu_symbol_visibility' : 'hidden',
