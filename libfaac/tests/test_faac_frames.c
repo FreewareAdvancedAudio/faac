@@ -112,6 +112,30 @@ static void test_ceiling(uint32_t max_channels)
     }
 }
 
+/* A channel count above the build's ceiling is refused, not silently opened. */
+static void test_channel_limit(uint32_t max_channels)
+{
+    faac_params p;
+    faac_encoder *enc = NULL;
+    FT_REQUIRE(faac_params_init(&p, sizeof(p)) == FAAC_OK);
+    p.sample_rate = RATE;
+    p.object_type = FAAC_OBJ_LC;
+    p.stream_format = FAAC_STREAM_ADTS;
+    p.input_format = FAAC_INPUT_16BIT;
+    for (uint32_t channels = 1; channels <= 8; channels++) {
+        if (channels == 7) continue; /* no AAC configuration */
+        p.channels = channels;
+        p.bit_rate = 64000 * channels;
+        if (channels > max_channels) {
+            FT_CHECK(faac_encoder_open(&p, &enc) == FAAC_ERR_UNSUPPORTED);
+            FT_CHECK(enc == NULL);
+        } else {
+            FT_REQUIRE(faac_encoder_open(&p, &enc) == FAAC_OK);
+            FT_REQUIRE(faac_encoder_close(&enc) == FAAC_OK);
+        }
+    }
+}
+
 static void test_window_transitions(void)
 {
     enum { FRAMES = RATE * 3 };
@@ -178,6 +202,7 @@ int main(void)
 {
     faac_library_info lib = { .struct_size = sizeof(lib) };
     FT_REQUIRE(faac_get_library_info(&lib) == FAAC_OK);
+    test_channel_limit(lib.max_channels);
     test_ceiling(lib.max_channels);
     test_window_transitions();
     if (lib.max_channels >= 6) test_lfe_narrow_bandwidth();

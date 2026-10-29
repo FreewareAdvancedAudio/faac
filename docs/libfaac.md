@@ -152,7 +152,7 @@ all error codes are negative, so `status < 0` tests for failure.
 `faac_strerror()` maps any status to a static human-readable string (never
 NULL). Notable codes: `FAAC_ERR_INVALID_ARGUMENT` (NULL, bad
 `struct_size`, or an out-of-range field), `FAAC_ERR_UNSUPPORTED` (an
-object type this build does not implement, or a request with no ASC),
+object type or channel count this build does not implement, or a request with no ASC),
 `FAAC_ERR_OUTPUT_TOO_SMALL`, and `FAAC_ERR_INPUT_OVERFLOW`.
 
 Always provide a non-NULL output buffer with at least `info.max_output_bytes`,
@@ -636,6 +636,7 @@ calls and rebuild.
 | `faac_encoder_asc()` as the only way to read the ASC | The ASC is also in `faac_encoder_info.asc` and `asc_size`, valid as soon as `faac_encoder_open()` returns. `faac_encoder_get_info()` and `faac_encoder_asc()` take a const handle. |
 | `rate_control` with `FAAC_RC_AUTO` as zero | `FAAC_RC_ABR` is zero and the default. `FAAC_RC_AUTO` is gone and the constants are renumbered (ABR 0, VBR 1, CBR 2). VBR needs `bit_rate = 0`. ABR and CBR need `quality = 0`; a `quality` given with a bitrate used to seed the rate loop and is now refused, and a VBR `quality` above 5000 is refused instead of clamped. |
 | per-channel `bit_rate` | **Whole-stream bits/sec; multiply an old value by `channels`.** Zero means 64 kbit/s for every channel. `faac_encoder_info.bit_rate` is whole-stream too, and `peak_bit_rate` must be at least `bit_rate`. |
+| channels above the build's `max-channels` | `faac_encoder_open()` returns `FAAC_ERR_UNSUPPORTED`. A build used to open an encoder with more channels than `faac_library_info.max_channels` reported. |
 | `use_lfe`, `channel_map`, `channel_map_count` | `channel_layout`: `FAAC_LAYOUT_AAC` (the default) or `FAAC_LAYOUT_WAV`. Six and eight channels always carry an LFE. Any other order is permuted by the caller before encoding. `faac.h` no longer includes `<stdbool.h>`. |
 
 ## ABI compatibility

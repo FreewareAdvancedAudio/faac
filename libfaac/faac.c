@@ -189,6 +189,8 @@ static faac_status validate_params(const faac_params *p, uint64_t *bit_rate_per_
         return FAAC_ERR_INVALID_ARGUMENT;
     if (GetChannelConfig((int)p->channels) == 0)
         return FAAC_ERR_INVALID_ARGUMENT;
+    if (p->channels > MAX_CHANNELS)
+        return FAAC_ERR_UNSUPPORTED;
     if (p->channel_layout != FAAC_LAYOUT_AAC && p->channel_layout != FAAC_LAYOUT_WAV)
         return FAAC_ERR_INVALID_ARGUMENT;
     /* The core runs on a per-channel rate. The bound is only a ceiling: it is

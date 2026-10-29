@@ -93,7 +93,7 @@ typedef struct faac_encoder faac_encoder;
 typedef enum faac_status {
     FAAC_OK                   = 0,
     FAAC_ERR_INVALID_ARGUMENT = -1,  /* NULL pointer, bad struct_size, or bad enum/field value */
-    FAAC_ERR_UNSUPPORTED      = -2,  /* object type not implemented, or MPEG-2 ASC requested */
+    FAAC_ERR_UNSUPPORTED      = -2,  /* object type not implemented, more channels than the build supports, or MPEG-2 ASC requested */
     FAAC_ERR_NO_MEMORY        = -3,  /* allocation failed */
     FAAC_ERR_OUTPUT_TOO_SMALL = -4,  /* output buffer smaller than max_output_bytes */
     FAAC_ERR_INPUT_OVERFLOW   = -5,  /* in_samples exceeded the per-call frame capacity */
