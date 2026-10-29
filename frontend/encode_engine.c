@@ -256,6 +256,19 @@ static uint32_t rc_advance(rate_conv_t *rc, uint64_t new_pos)
     return delta;
 }
 
+/* The library reports a compiled-out profile as a bare unsupported status. */
+static const char *open_error(faac_status st, const faac_params *params)
+{
+    faac_library_info lib = { .struct_size = sizeof(lib) };
+    if (st == FAAC_ERR_UNSUPPORTED && faac_get_library_info(&lib) == FAAC_OK) {
+        if (params->object_type == FAAC_OBJ_HE_AAC_V1 && !(lib.flags & FAAC_LIB_SBR))
+            return "HE-AAC v1 is not in this build (needs -Dencoder-sbr=true)";
+        if (params->object_type == FAAC_OBJ_HE_AAC_V2 && !(lib.flags & FAAC_LIB_PS))
+            return "HE-AAC v2 is not in this build (needs -Dencoder-ps=true)";
+    }
+    return faac_strerror(st);
+}
+
 /* Settings for the (c)too atom, in fdkaac's style: ", "-separated fields, each
    a short phrase ("ABR 64kbps", "cutoff 14500Hz"). Rates are the whole stream,
    as -b takes them.
@@ -559,8 +572,8 @@ int run_encoding_session_ext(const encode_options_t *opts,
     faac_library_info libinfo = { .struct_size = sizeof(libinfo) };
     faac_get_library_info(&libinfo);
     if (num_channels > libinfo.max_channels)
-        FAIL("Input file %s has %u channels, but this build supports at most %u.\n",
-             opts->input_filename, num_channels, libinfo.max_channels);
+        FAIL("Input file %s has %u channels, but this build supports at most %u (rebuild with -Dmax-channels=%u).\n",
+             opts->input_filename, num_channels, libinfo.max_channels, num_channels);
 
     faac_params params;
     faac_params_init(&params, sizeof(params));
@@ -625,7 +638,7 @@ int run_encoding_session_ext(const encode_options_t *opts,
             faac_status st = resolve_object_type(&params, &native_type);
             if (st != FAAC_OK)
                 FAIL("Couldn't open encoder instance for %s: %s\n",
-                     opts->input_filename, faac_strerror(st));
+                     opts->input_filename, open_error(st, &params));
             if (native_type == FAAC_OBJ_LC)
             {
                 target_rate = 32000;
@@ -698,7 +711,7 @@ int run_encoding_session_ext(const encode_options_t *opts,
         faac_status st = faac_encoder_open(&params, &hEncoder);
         if (st != FAAC_OK)
             FAIL("Couldn't open encoder instance for %s: %s\n",
-                 opts->input_filename, faac_strerror(st));
+                 opts->input_filename, open_error(st, &params));
     }
 
     faac_encoder_info info = { .struct_size = sizeof(info) };

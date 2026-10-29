@@ -567,6 +567,16 @@ static void test_known_extensions(void)
     adts[2] = 0x60; /* 16 kHz core, matching ASC */
     faad_library_info library = { .struct_size = sizeof(library) };
     assert(faad_get_library_info(&library) == FAAD_OK);
+#ifndef FAAD_DISABLE_DAB
+    assert(library.flags & FAAD_LIB_DAB);
+#else
+    assert(!(library.flags & FAAD_LIB_DAB));
+#endif
+#ifndef FAAD_DISABLE_DRC
+    assert(library.flags & FAAD_LIB_DRC);
+#else
+    assert(!(library.flags & FAAD_LIB_DRC));
+#endif
     for (int parametric = 0; parametric < 2; parametric++) {
         faad_config cfg;
         faad_config_init(&cfg, sizeof(cfg));

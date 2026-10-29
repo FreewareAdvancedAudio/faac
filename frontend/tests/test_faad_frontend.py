@@ -15,7 +15,7 @@
 """Round-trip the faad frontend through faac: ADTS and MP4 input, WAV to a
 file and to stdout.
 
-Usage: test_faad_frontend.py <faac> <faad> <faam> <max-channels> <decoder-sbr> <decoder-drc> <encoder-sbr>
+Usage: test_faad_frontend.py <faac> <faad> <faam> <max-channels> <decoder-sbr> <decoder-drc> <encoder-sbr> <decoder-dab>
 """
 
 import json
@@ -254,6 +254,15 @@ def main():
                 if os.path.exists(out):
                     os.unlink(out)
 
+        # Without DAB+ a 960-sample stream cannot open, and the error names the build option.
+        if sys.argv[8] != "true":
+            path = os.path.join(d, "dab.m4a")
+            with open(path, "wb") as f:
+                f.write(extraction_mp4(b"\x12\x14", [bytes(1)]))
+            result = subprocess.run([faad, "-q", "--overwrite", "-o", os.path.join(d, "dab.wav"), path],
+                                    capture_output=True)
+            assert result.returncode != 0 and b"-Ddecoder-dab=true" in result.stderr, result.stderr
+
         # A corrupt later sample must not turn extraction into a successful
         # conversion of just the valid prefix.
         data = bytearray(extraction_mp4(b"\x12\x10", [b"\0", b"\0"]))
@@ -454,6 +463,13 @@ def main():
                            check=True, capture_output=True)
             he_out = os.path.join(d, "he.wav")
             subprocess.run([faad, "-q", "--strict", "-o", he_out, he], check=True, capture_output=True)
+            # A decoder without SBR plays the core alone and says so on stderr.
+            warned = subprocess.run([faad, "--overwrite", "-o", he_out, he],
+                                    check=True, capture_output=True).stderr
+            assert (b"-Ddecoder-sbr=true" in warned) == (not sbr), warned.decode(errors="replace")
+            drc = subprocess.run([faad, "--overwrite", "--drc-target", "96", "-o", he_out, he],
+                                 check=True, capture_output=True).stderr
+            assert (b"-Ddecoder-drc=true" in drc) == (sys.argv[6] != "true"), drc.decode(errors="replace")
             with wave.open(he_out) as w:
                 assert w.getframerate() == (44100 if sbr else 22050) and w.getnchannels() == channels
                 assert w.getnframes() == (88200 if sbr else 44100), "runtime decoder delay changed gapless length"
