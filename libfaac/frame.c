@@ -134,6 +134,13 @@ int faacEncGetVersion( char **faac_id_string,
  * writer. The longest ASC is mono HE: 16 core + 21 SBR + 12 PS bits. */
 _Static_assert(sizeof(((faacEncStruct *)0)->asc) * 8 >= 16 + 21 + 12,
                "ASC buffer must hold the mono HE extensions");
+#if MAX_CHANNELS >= 8
+/* An eight-channel ASC carries the PCE before the SBR extension. */
+_Static_assert(sizeof(((faacEncStruct *)0)->asc) >= PCE_HE_ASC_BYTES,
+               "ASC buffer must hold the PCE and SBR extensions");
+_Static_assert(sizeof(((faacEncStruct *)0)->pce) >= PCE_ADTS_BYTES,
+               "PCE buffer must hold the in-band element");
+#endif
 
 int faacEncGetDecoderSpecificInfo(faacEncHandle hpEncoder, unsigned char *buf)
 {
@@ -149,8 +156,18 @@ int faacEncGetDecoderSpecificInfo(faacEncHandle hpEncoder, unsigned char *buf)
     InitBitStream(&bs, buf, sizeof(hEncoder->asc));
     PutBit(&bs, he ? LOW : hEncoder->config.aacObjectType, 5);
     PutBit(&bs, hEncoder->sampleRateIdx, 4);
-    PutBit(&bs, GetChannelConfig(CoreChannels(hEncoder->config.aacObjectType, (int)hEncoder->numChannels)), 4);
+    PutBit(&bs, SignalledChannelConfig(CoreChannels(hEncoder->config.aacObjectType, (int)hEncoder->numChannels)), 4);
     PutBit(&bs, 0, 3); /* frameLengthFlag, dependsOnCoreCoder, extensionFlag */
+#if MAX_CHANNELS >= 8
+    if (HasPCE((int)hEncoder->numChannels)) {
+        /* Same PCE as the in-band image, minus the element id; copying it bit
+         * by bit keeps a single copy of the field writer. */
+        for (uint32_t i = LEN_SE_ID; i < LEN_SE_ID + PCE_BODY_BITS; i++)
+            PutBit(&bs, (hEncoder->pce[i >> 3] >> (7 - (i & 7))) & 1, 1);
+        PutBit(&bs, 0, (int)((8 - (bs.currentBit & 7)) & 7));
+        PutBit(&bs, 0, 8);
+    }
+#endif
     if (he) {
         /* Backward-compatible sync extension: AAC-LC at Fs/2, SBR at full Fs. */
         PutBit(&bs, 0x2b7, 11);
@@ -388,6 +405,13 @@ int faacEncApplyConfig(faacEncStruct* hEncoder)
                      CoreChannels(hEncoder->config.aacObjectType, hEncoder->numChannels),
                      CoreBitrate(hEncoder->config.aacObjectType, hEncoder->config.bitRate),
                      hEncoder->sampleRate, hEncoder->config.rateControl == RATE_CBR);
+
+#if MAX_CHANNELS >= 8
+    /* Both the ASC and the in-band repeats copy this image, so it must exist
+     * whether or not the caller asks for the ASC. */
+    if (HasPCE((int)hEncoder->numChannels))
+        BuildPCE(hEncoder->pce, hEncoder->sampleRateIdx);
+#endif
 
     return 1;
 }
@@ -916,7 +940,8 @@ int faacEncEncode(faacEncHandle hpEncoder,
     float baseQuality = hEncoder->aacquantCfg.quality;
     int sfbnSnap[MAX_CHANNELS];
     int attempt;
-    /* Every cap below is on the raw_data_block; the ADTS header is transport. */
+    /* The raw_data_block includes periodic PCE bytes, so caps and reservoir
+     * accounting charge them along with audio; only the ADTS header is excluded. */
     int hdrBytes = (hEncoder->config.outputFormat == 1) ? ADTS_HEADER_SIZE : 0;
     int payloadBits = 0;
 #ifdef FAAC_STATS

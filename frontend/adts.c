@@ -51,15 +51,23 @@ const char *adts_params_from_asc(const AscInfo *asc, bool lenient, adts_params *
         /* The 2-bit profile names Main, LC, SSR and LTP; any other object type has no ADTS form. */
         if (asc->object_type < 1 || asc->object_type > 4)
             return "its AAC object type has no ADTS profile";
-        /* 0 would put the layout in a program config element inside the frames; 8 and up are reserved. */
-        if (asc->num_channels < 1 || asc->num_channels > 7)
+        /* Configuration 0 puts the layout in a program config element, which the caller must then
+         * write into the frames; 8 and up are reserved. */
+        bool pce = asc->channel_config == 0 && asc->pce.channels;
+        if (!pce && (asc->num_channels < 1 || asc->num_channels > 7))
             return "its channel configuration cannot be written in an ADTS header";
         out->profile = (uint8_t)(asc->object_type - 1);
-        out->channel_cfg = asc->num_channels;
+        out->channel_cfg = pce ? 0 : asc->num_channels;
     }
     out->sr_idx = (uint8_t)sr_idx;
     out->raw_blocks = 0;
     return NULL;
+}
+
+uint32_t adts_pce_bytes(uint32_t pce_len, uint64_t frame, const uint8_t *block, uint32_t block_len)
+{
+    bool opens_with_pce = block_len && (block[0] >> 5) == 5; /* ID_PCE */
+    return pce_len && frame % ADTS_PCE_REPEAT == 0 && !opens_with_pce ? pce_len : 0;
 }
 
 void adts_write_header(const adts_params *p, uint32_t payload_bytes, uint8_t hdr[ADTS_HEADER_SIZE])

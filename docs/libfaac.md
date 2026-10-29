@@ -347,6 +347,13 @@ reorders channels; it does not mix or downmix audio, and there is no way to
 place the channels of a custom source order. A caller with one permutes the
 samples itself and passes `FAAC_LAYOUT_AAC`.
 
+Eight-channel streams are signalled with channelConfiguration 0 and a program
+config element that lists the pairs as front, side, back, so Apple, FDK,
+FFmpeg and libfaad all read the same 7.1. AAC channel configuration 7 is not
+used because ISO/IEC 14496-3 defines it as 7.1 wide. ADTS streams carry the PCE
+in the first frame and repeat it every 32 frames so a decoder that joins late
+learns the layout; RAW streams carry it in the AudioSpecificConfig only.
+
 Open copies the parameters; their storage may be released after open.
 Input and output buffers remain caller-owned; PCM is copied into internal
 storage during encode. ASC remains library-owned until close; copy it if the
@@ -368,9 +375,10 @@ over where encoder memory lives. The allocator need not clear the memory it retu
 
 The encoder instance is heap-allocated at `faac_encoder_open()` and does not
 allocate again while encoding or flushing. AudioSpecificConfig is built at open
-in an 8-byte array inside the handle: 2 bytes for LC, 5 bytes for multichannel
-HE-AAC, or 7 bytes for mono HE-AAC. `faac_encoder_asc()` returns that storage
-without allocating. Closing the handle releases all of it.
+in a 14-byte array inside the handle: 2 bytes for LC, 5 bytes for multichannel
+HE-AAC, 7 bytes for mono HE-AAC, and up to 14 bytes for eight channels, whose
+PCE is part of it. `faac_encoder_asc()` returns that storage without
+allocating. Closing the handle releases all of it.
 
 The following are indicative measurements from an arm64 build at 48000 Hz
 with default build options, not storage requirements guaranteed across builds:

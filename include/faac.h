@@ -158,7 +158,10 @@ enum faac_input_format {
     FAAC_INPUT_MAX = 0x7fffffff
 };
 
-/* Order of the interleaved input channels. */
+/* Order of the interleaved input channels. Eight channels carry a program
+ * config element (PCE) that lists the pairs as front, side, back, so Apple,
+ * FDK, FFmpeg and libfaad read the same 7.1; AAC channel configuration 7
+ * would declare 7.1 wide. */
 enum faac_channel_layout {
     /* AAC element order: FC, front L/R, then BC (4 ch), back L/R (5/6 ch),
      * or side L/R then back L/R (8 ch), with LFE last (6/8 ch). */
@@ -271,8 +274,9 @@ typedef struct faac_encoder_info {
 
     /* AudioSpecificConfig for raw streams and containers, valid as soon as
      * open() returns; copy the bytes if they are needed after this struct.
-     * Room for 14 bytes; the library writes 2 to 7 today. ADTS MPEG-2 has
-     * none (asc_size is 0). */
+     * Up to 14 bytes: the eight-channel PCE and the HE-AAC extension add to
+     * the 2 to 7 bytes of the other layouts. ADTS MPEG-2 has none (asc_size
+     * is 0). */
     uint32_t                asc_size;
     uint8_t                 asc[14];
 } faac_encoder_info;

@@ -237,8 +237,11 @@ The AAC object type, sample rate and channel configuration are read from the
 first ADTS header, which must be valid and must follow an optional ID3v2 tag.
 .IP \(bu 3
 Each frame is muxed as one 1024-sample unit, so a stream whose frames hold more
-than one raw data block (number_of_raw_data_blocks above 0) is an error, as is
-a channel configuration of 0.
+than one raw data block (number_of_raw_data_blocks above 0) is an error.
+.IP \(bu 3
+A channel configuration of 0 means the layout is in a program config element,
+which the first frame must open with; the AudioSpecificConfig is built from it.
+Eight-channel streams from faac are signalled this way.
 .IP \(bu 3
 Bytes that are not a frame header are skipped, and so are frames whose
 profile, rate or channels differ from the first header's, as they are most
@@ -312,7 +315,9 @@ A name containing
 .B .aac
 or
 .B .adts
-gets ADTS headers, built from the track's AudioSpecificConfig, on AAC frames;
+gets ADTS headers, built from the track's AudioSpecificConfig, on AAC frames,
+with a layout held in a program config element written into the first frame and
+every 32nd after it;
 video is written as Annex-B.
 An output that exists is refused unless
 .B \-\-overwrite

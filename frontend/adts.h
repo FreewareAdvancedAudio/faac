@@ -52,6 +52,14 @@ void adts_parse_header(const uint8_t *h, adts_params *out);
    rather than a header that names another stream. */
 const char *adts_params_from_asc(const AscInfo *asc, bool lenient, adts_params *out);
 
+/* A stream whose layout is a program config element repeats it so a decoder that joins late learns
+   the layout; the encoder writes it in the first frame and every ADTS_PCE_REPEAT-th after it. */
+#define ADTS_PCE_REPEAT 32
+
+/* How many bytes of that element (pce_len) to write ahead of raw_data_block number `frame`: none
+   off the repeat, or when the block already opens with one. */
+uint32_t adts_pce_bytes(uint32_t pce_len, uint64_t frame, const uint8_t *block, uint32_t block_len);
+
 /* The 7-byte header for a frame carrying payload_bytes of raw_data_block. */
 void adts_write_header(const adts_params *p, uint32_t payload_bytes, uint8_t hdr[ADTS_HEADER_SIZE]);
 

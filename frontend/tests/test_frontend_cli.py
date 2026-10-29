@@ -852,7 +852,48 @@ def run_demux_header(t, d):
                              for i in range(48000 * 8)))
         r = t.run(t.faac, ["-v0", "-P", "-R", "48000", "-B", "16", "-C", "8", "--object-type", "lc", "-q", "100", "-a",
                            "-o", "c8.aac", "c8.raw"], d)
-        check(r.returncode == 0 and adts_frames(os.path.join(d, "c8.aac"))[0][2] == 7, "faac 7.1 ADTS has channel configuration 7")
+        check(r.returncode == 0 and adts_frames(os.path.join(d, "c8.aac"))[0][2] == 0, "faac 7.1 ADTS carries its layout in a PCE")
+
+        # faac's own .m4a keeps the layout in the ASC only; demuxing it to ADTS must write the PCE
+        # the way the encoder does, in the first frame and every 32nd, and nowhere else.
+        r = t.run(t.faac, ["-v0", "-P", "-R", "48000", "-B", "16", "-C", "8", "--object-type", "lc", "-q", "100",
+                           "-o", "c8_asc.m4a", "c8.raw"], d)
+        r2 = t.faam_run(["demux", "c8_asc.m4a", "-o", "c8_asc.aac"], d)
+        frames = adts_frames(os.path.join(d, "c8_asc.aac")) if r.returncode == 0 and r2.returncode == 0 else []
+        check(len(frames) > 33 and all(f[2] == 0 for f in frames), "demuxed 7.1 ADTS has channel configuration 0")
+        check([i for i, f in enumerate(frames) if f[3][0] >> 5 == 5] == list(range(0, len(frames), 32)),
+              "demuxed 7.1 ADTS carries the PCE in every 32nd frame, starting with the first")
+        if r.returncode == 0 and r2.returncode == 0:
+            def pcm_frames(src, name):
+                if decode_pcm(t, d, src, name) is None:
+                    return b""
+                with wave.open(os.path.join(d, name)) as w:
+                    return w.readframes(w.getnframes())
+            asc_pcm, aac_pcm = pcm_frames("c8_asc.m4a", "c8_asc_m4a.wav"), pcm_frames("c8_asc.aac", "c8_asc_aac.wav")
+            # faad trims the encoder delay and padding from an MP4 but not from ADTS.
+            check(asc_pcm and asc_pcm in aac_pcm,
+                  "faad decodes the 7.1 .m4a as the demuxed .aac without its delay and padding")
+
+        # faad's own ADTS extraction writes the same frames as faam's demux.
+        r3 = t.run(t.faad, ["-q", "--overwrite", "-a", "c8_faad.aac", "c8_asc.m4a"], d)
+        check(r3.returncode == 0 and r2.returncode == 0
+              and read(os.path.join(d, "c8_faad.aac")) == read(os.path.join(d, "c8_asc.aac")),
+              "faad extracts the 7.1 .m4a to the same ADTS as faam demux")
+
+        # Importing reads the layout from the first frame, from a file or a pipe alike; a stream cut
+        # before its first PCE has no layout to read.
+        adts = read(os.path.join(d, "c8.aac"))
+        first = ((adts[3] & 3) << 11) | (adts[4] << 3) | (adts[5] >> 5)
+        r4 = t.faam_run(["-i", "c8.aac", "-o", "c8_file.m4a"], d)
+        r5 = t.run(t.faam, ["-i", "-", "-o", "c8_pipe.m4a"], d, input_data=adts)
+        check(r4.returncode == 0 and r5.returncode == 0
+              and read(os.path.join(d, "c8_file.m4a")) == read(os.path.join(d, "c8_pipe.m4a")),
+              "faam imports 7.1 ADTS from a pipe byte-identically to a file")
+        open(os.path.join(d, "c8_cut.aac"), "wb").write(adts[first:])
+        r6 = t.faam_run(["-i", "c8_cut.aac", "-o", "c8_cut.m4a"], d)
+        check(r6.returncode != 0 and b"program config element" in r6.stderr
+              and not os.path.exists(os.path.join(d, "c8_cut.m4a")),
+              "faam refuses 7.1 ADTS that does not open with its PCE")
 
     cases = [("lc.aac", m) for m in ("none", "compatible", "explicit")] + \
             ([("he.aac", m) for m in ("none", "compatible", "explicit")] if ENCODER_SBR else []) + \
