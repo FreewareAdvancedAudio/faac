@@ -243,6 +243,12 @@ FAADAPI faad_status faad_get_library_info(faad_library_info *out_info)
 #ifndef FAAD_DISABLE_PS
     info.flags |= FAAD_LIB_PS;
 #endif
+#ifndef FAAD_DISABLE_DAB
+    info.flags |= FAAD_LIB_DAB;
+#endif
+#ifndef FAAD_DISABLE_DRC
+    info.flags |= FAAD_LIB_DRC;
+#endif
 
     memcpy(out_info, &info, info.struct_size);
     return FAAD_OK;

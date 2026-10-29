@@ -862,7 +862,19 @@ int run_decoding_session_ext(const decode_options_t *opts,
 
     st = faad_decoder_open(&cfg, is_mp4 ? track.asc_buf : NULL, is_mp4 ? track.asc_len : 0, &dec);
     if (st != FAAD_OK) {
-        log_msgf(log_cb, user_data, 0, "Failed to open FAAD decoder: %s\n", faad_strerror(st));
+        faad_library_info lib = { .struct_size = sizeof(lib) };
+        AscInfo asc_info = { 0 };
+        if (st == FAAD_ERR_UNSUPPORTED && is_mp4)
+            asc_codec_parse(track.asc_buf, track.asc_len, &asc_info);
+        if (asc_info.frame_length_flag && faad_get_library_info(&lib) == FAAD_OK &&
+            !(lib.flags & FAAD_LIB_DAB))
+            log_msgf(log_cb, user_data, 0, "Failed to open FAAD decoder: the stream uses 960-sample frames (Digital Audio Broadcasting), which this build lacks (needs -Ddecoder-dab=true)\n");
+        else if (asc_info.num_channels && faad_get_library_info(&lib) == FAAD_OK &&
+            asc_info.num_channels > lib.max_channels)
+            log_msgf(log_cb, user_data, 0, "Failed to open FAAD decoder: the stream has %u channels, but this build decodes at most %u (rebuild with -Dmax-channels=%u)\n",
+                     (unsigned)asc_info.num_channels, lib.max_channels, (unsigned)asc_info.num_channels);
+        else
+            log_msgf(log_cb, user_data, 0, "Failed to open FAAD decoder: %s\n", faad_strerror(st));
         ret_status = DECODE_ERROR;
         goto cleanup;
     }
@@ -918,6 +930,17 @@ int run_decoding_session_ext(const decode_options_t *opts,
         if (init_sinfo.sample_rate > 0) sample_rate = init_sinfo.sample_rate;
         if (init_sinfo.channels > 0) num_channels = init_sinfo.channels;
         obj_type = init_sinfo.object_type;
+    }
+
+    /* Without the layer the decoder plays the core alone, at the wrong rate or channel count. */
+    faad_library_info dec_lib = { .struct_size = sizeof(dec_lib) };
+    if (faad_get_library_info(&dec_lib) == FAAD_OK) {
+        if ((obj_type == FAAD_OBJ_HE_AAC_V1 || obj_type == FAAD_OBJ_HE_AAC_V2) && !(dec_lib.flags & FAAD_LIB_SBR))
+            log_msgf(log_cb, user_data, 0, "Warning: this stream uses SBR, which this build lacks (needs -Ddecoder-sbr=true); decoding the core only, at half the sample rate\n");
+        else if (obj_type == FAAD_OBJ_HE_AAC_V2 && !(dec_lib.flags & FAAD_LIB_PS))
+            log_msgf(log_cb, user_data, 0, "Warning: this stream uses Parametric Stereo, which this build lacks (needs -Ddecoder-ps=true); decoding mono\n");
+        if ((drc_cut || drc_boost || drc_target) && !(dec_lib.flags & FAAD_LIB_DRC))
+            log_msgf(log_cb, user_data, 0, "Warning: the DRC options have no effect, this build lacks dynamic range control (needs -Ddecoder-drc=true)\n");
     }
 
     double est_duration_sec = 0.0;

@@ -116,7 +116,8 @@ if get_option('muxer') and get_option('encoder') and get_option('decoder') and n
     test('test_e2e_faad_frontend', find_program('python3'),
         args: [files('test_faad_frontend.py'), faac, faad, faam,
                get_option('max-channels').to_string(), get_option('decoder-sbr').to_string(),
-               get_option('decoder-drc').to_string(), encoder_sbr.to_string()])
+               get_option('decoder-drc').to_string(), encoder_sbr.to_string(),
+               get_option('decoder-dab').to_string()])
     subdir('faad')
 
     test('test_e2e_faam_metadata_cli', find_program('python3'),

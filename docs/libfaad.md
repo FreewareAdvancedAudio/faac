@@ -84,13 +84,14 @@ to the include path. Define `FAAD_BUILDING` when building a Windows DLL.
 | AAC-LC | Always built | No capability field; supported by every decoder build | No build switch. |
 | HE-AAC v1 (SBR) | `decoder-sbr` (true) | `faad_library_info.flags & FAAD_LIB_SBR` | SBR output is unavailable. |
 | HE-AAC v2 (SBR + PS) | `decoder-sbr` and `decoder-ps` (both true); requires at least two compiled channels | `faad_library_info.flags & (FAAD_LIB_SBR \| FAAD_LIB_PS)` and `max_channels` | PS stereo output is unavailable. |
+| Digital Audio Broadcasting (DAB+; 960/120-sample frames) | `decoder-dab` (true) | `faad_library_info.flags & FAAD_LIB_DAB` | A stream signalling 960-sample frames fails to open with `FAAD_ERR_UNSUPPORTED`; 1024-sample streams are unaffected. |
+| Dynamic range control | `decoder-drc` (true) | `faad_library_info.flags & FAAD_LIB_DRC` | The DRC settings in `faad_config` are accepted and have no effect. |
 | ADTS | Always built | No capability field; select `FAAD_STREAM_ADTS` | Pass headers and payload; one raw data block per ADTS frame. |
 | RAW AAC | Always built | No capability field; select `FAAD_STREAM_RAW` | Supply valid ASC at open; pass one complete access unit per call. |
 | MP4/M4A | External demuxer | No container capability field | libfaad does not parse containers. Use [libfaam](libfaam.md) to supply track ASC and RAW access units; see [Reading MP4 for the FAAD decoder](libfaam.md#reading-mp4-for-the-faad-decoder). |
 | Channel capacity | `max-channels` (8), range 1–8 | `faad_library_info.max_channels` | Streams beyond the compiled ceiling cannot be decoded; downmix does not raise it. Builds below 3 channels omit AAC coupling channel elements (CCE) and reject them as unsupported. |
 | PCM output | Always built | No capability field; select `faad_config.output_format` | Interleaved signed 16-bit, packed 24-bit, 24-bit integer in 32 bits, or 32-bit float; no build switch. |
 | ADIF, LATM, DRM and legacy AAC profiles | Unsupported | No capability field | See [Configuration field mapping](#configuration-field-mapping). |
-| 960-sample AAC frames | Unsupported | No capability field | The AAC core uses 1024-sample frames. |
 
 Query `faad_get_library_info()` for the loaded library's channel ceiling and
 SBR/PS capabilities; set `faad_library_info.struct_size` before calling.
@@ -549,7 +550,8 @@ and new code should use libfaad3 directly.
 - **Version and capabilities.** Replace `NeAACDecGetVersion()` and
   `NeAACDecGetCapabilities()` with `faad_get_library_info()`. It reports
   library-owned version/copyright strings, the compiled channel ceiling, and
-  SBR/PS support in `flags` (`FAAD_LIB_SBR` / `FAAD_LIB_PS`). Use
+  SBR, PS, DAB+ and DRC support in `flags` (`FAAD_LIB_SBR`, `FAAD_LIB_PS`,
+  `FAAD_LIB_DAB`, `FAAD_LIB_DRC`). Use
   `FAAD_VERSION_STRING` / `FAAD_VERSION_HEX` for compile-time header version
   checks instead of `FAAD2_VERSION`.
 - **Struct growth and integer widths.** Always initialize configuration with

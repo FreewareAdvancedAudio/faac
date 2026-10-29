@@ -189,6 +189,13 @@ def no_output(d, name):
 
 def test_gapless_boxes(t, d):
     make_wav(os.path.join(d, "gapless.wav"), rate=44100, secs=3.1, sine=True)
+    # A profile compiled out of the encoder is named in the error, not reported as unsupported.
+    for profile, built, option in (("he-aac-v1", ENCODER_SBR, "encoder-sbr"), ("he-aac-v2", ENCODER_PS, "encoder-ps")):
+        if not built:
+            r = t.run(t.faac, ["-v0", "--object-type", profile, "-b", "48", "-o", "absent.m4a", "gapless.wav"], d)
+            check(r.returncode != 0 and f"-D{option}=true".encode() in r.stderr,
+                  f"{profile} without {option} names the build option: " + r.stderr.decode(errors="replace"))
+
     cases = [("gapless_lc", ["-q", "100"], [])]
     if ENCODER_SBR:
         cases.append(("gapless_he", ["--object-type", "he-aac-v1", "-b", "48"],

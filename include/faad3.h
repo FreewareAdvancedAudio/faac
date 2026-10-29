@@ -99,12 +99,14 @@ typedef enum faad_status {
 enum faad_library_flag {
     FAAD_LIB_SBR = 1u << 0,
     FAAD_LIB_PS = 1u << 1,
+    FAAD_LIB_DAB = 1u << 2,         /* Digital Audio Broadcasting: 960/120-sample frames */
+    FAAD_LIB_DRC = 1u << 3,         /* Dynamic range control is applied */
     FAAD_LIB_FLAG_MAX = 0x7fffffff
 };
 
 /*
  * Library-global facts, independent of any decoder instance. These reflect
- * build-time options (max-channels, decoder-sbr, decoder-ps) that the header
+ * build-time options (max-channels, decoder-sbr, decoder-ps, decoder-dab, decoder-drc) that the header
  * alone cannot report, so they are queried at runtime. Set out_info->struct_size to
  * sizeof(faad_library_info) before the call; the struct grows only by
  * appending fields. struct_size reports bytes populated. version/copyright

@@ -219,7 +219,7 @@ jobs:
           if build/frontend/faac --object-type he-aac-v1 -o he-smoke.aac lc-smoke.wav 2>he-smoke.err; then
             exit 1
           fi
-          grep -i unsupported he-smoke.err
+          grep -F -- "-Dencoder-sbr=true" he-smoke.err
 
       - name: Build (MSVC)
         if: matrix.config.compiler == 'cl'
