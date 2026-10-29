@@ -51,7 +51,7 @@ meson install -C build
 | Option | Default | Description |
 |--------|---------|-------------|
 | `decoder` | true | Build `libfaad` and the `faad` frontend |
-| `decoder-dab` | true | DAB+ (960/120 frame length) support in `libfaad` |
+| `decoder-dab` | true | Digital Audio Broadcasting (960/120 frame length) support in `libfaad` |
 | `decoder-drc` | true | Dynamic range control support in `libfaad` |
 | `decoder-ps` | true | Parametric Stereo (HE-AAC v2) support in `libfaad`; needs `decoder-sbr` |
 | `decoder-sbr` | true | SBR (HE-AAC v1) support in `libfaad` |
