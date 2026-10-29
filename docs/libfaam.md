@@ -1059,10 +1059,9 @@ ABI. Layouts follow the target's pointer width and alignment; they differ betwee
 - No struct embeds another or holds an array of structs; the fixed `language`
   byte arrays are not extensible lists. Open calls take config pointers so knobs
   can be appended; only the demuxer accepts a NULL config.
-- `FAAM_VERSION_MAJOR` matches the library SONAME major; minor and patch macros
-  track the project release. `faam_get_library_info()` reports the linked version.
-  Opaque handle contents, allocation/state sizes and sample-index limits are
-  outside the ABI.
+- `FAAM_VERSION_*` is the project release version, which every library reports; the
+  SONAME is versioned separately. Opaque handle contents, allocation/state sizes and sample-index limits
+  are outside the ABI.
 
 FAAM is free software, licensed under the GNU Lesser General Public License
 (LGPL), version 2.1 or later.

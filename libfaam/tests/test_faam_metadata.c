@@ -224,6 +224,7 @@ int main(int argc, char **argv) {
     }
     CHECK(argc == 1); exercise_future_entries(); exercise(0); exercise(FAAM_MUXER_FASTSTART);
     faam_library_info info = { .struct_size = sizeof(info) }; OK(faam_get_library_info(&info));
+    CHECK(info.version && !strcmp(info.version, FAAM_VERSION_STRING));
     if (info.flags & FAAM_LIB_FRAGMENTED) {
         FILE *f = tmpfile(); CHECK(f); fixture(f, 0, true); verify_media(f, true); fclose(f);
     }

@@ -48,7 +48,7 @@
  *     Callers must check library support (the struct_size written back by the
  *     library) before requesting new behavior. Baseline sizes, enum values,
  *     signatures and offsets of released fields stay fixed within a major version.
- *   - FAAR_VERSION_MAJOR tracks the libfaar SONAME, not the project release.
+ *   - FAAR_VERSION_* is the project release version, not the SONAME.
  *     Structs hold fixed-width integers only; size_t appears in signatures and
  *     follows the platform ABI.
  *   - Independent handles may be used concurrently; one handle is owned by one

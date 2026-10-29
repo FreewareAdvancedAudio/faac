@@ -31,7 +31,7 @@ read or write audio files.
 Include `<faar.h>` and link against `libfaar` (`-lfaar`). Installed builds
 provide the `faar` pkg-config module.
 
-The shared library is `libfaar` (`libfaar.so.3` on Linux, `libfaar.3.dylib` on
+The shared library is `libfaar` (`libfaar.so.0` on Linux, `libfaar.0.dylib` on
 macOS, or `libfaar.dll` on Windows). The default build also produces a static
 archive. The `faar` command-line tool in `frontend/` is an example of using the
 API.
@@ -398,8 +398,8 @@ ABI. Layouts follow the target's pointer width and alignment; they differ betwee
 - Baseline sizes (`FAAR_*_BASELINE` macros), released offsets, enum values, status codes
   and signatures stay fixed within a major version; incompatible changes need a
   new SONAME.
-- `FAAR_VERSION_MAJOR` matches the library SONAME major; minor and patch macros
-  track the project release. `faar_get_library_info()` reports the linked version.
+- `FAAR_VERSION_*` is the project release version, which every library reports;
+  the SONAME is versioned separately. `faar_get_library_info()` reports the linked version.
 
 ## Command-line tool
 

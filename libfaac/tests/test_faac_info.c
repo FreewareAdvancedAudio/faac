@@ -73,6 +73,7 @@ static void test_layouts(void)
     };
     faac_library_info lib = { .struct_size = sizeof lib };
     assert(faac_get_library_info(&lib) == FAAC_OK);
+    assert(lib.version && lib.version[0]);
     for (uint32_t ch = 3; ch <= 8 && ch <= lib.max_channels; ch++) {
         if (ch == 7) continue;
         const uint32_t frames = 4096;
