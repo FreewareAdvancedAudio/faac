@@ -4,7 +4,7 @@ FAAC is an open-source, dependency-free AAC encoder, with FAAD as its decoder, a
 
 ### Key features:
 
-- MPEG-4 AAC-LC and HE-AAC v1 (SBR) encoding and decoding, plus HE-AAC v2 (PS) decoding and, with `-Dencoder-ps`, encoding
+- MPEG-4 AAC-LC, HE-AAC v1 (SBR) and HE-AAC v2 (PS) encoding and decoding; PS encoding is an optional build
 - Sample rates from 8 kHz to 96 kHz, supporting mono up to 7.1 multichannel
 - VBR, ABR and CBR rate control
 - Advanced encoding tools: Dynamic block-switching, PNS, and TNS
@@ -50,23 +50,23 @@ meson install -C build
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `encoder` | true | Build `libfaac` and the `faac` frontend |
-| `encoder-sbr` | true | HE-AAC v1 (SBR) support in `libfaac`; false builds an LC-only encoder |
-| `encoder-ps` | false | Enable HE-AAC v2 Parametric Stereo encoding; needs `encoder-sbr` |
 | `decoder` | true | Build `libfaad` and the `faad` frontend |
-| `frontend` | true | Build the command-line tools |
-| `frontend-static` | false | Link the frontend executables to the static libraries |
-| `decoder-sbr` | true | SBR (HE-AAC v1) support in `libfaad` |
-| `decoder-ps` | true | Parametric Stereo (HE-AAC v2) support in `libfaad`; needs `decoder-sbr` |
 | `decoder-dab` | true | DAB+ (960/120 frame length) support in `libfaad` |
 | `decoder-drc` | true | Dynamic range control support in `libfaad` |
+| `decoder-ps` | true | Parametric Stereo (HE-AAC v2) support in `libfaad`; needs `decoder-sbr` |
+| `decoder-sbr` | true | SBR (HE-AAC v1) support in `libfaad` |
+| `encoder` | true | Build `libfaac` and the `faac` frontend |
+| `encoder-ps` | false | Enable HE-AAC v2 Parametric Stereo encoding; needs `encoder-sbr` |
+| `encoder-sbr` | true | HE-AAC v1 (SBR) support in `libfaac`; false builds an LC-only encoder |
+| `frontend` | true | Build the command-line tools |
+| `frontend-static` | false | Link the frontend executables to the static libraries |
 | `max-channels` | 8 | Maximum number of channels (1-8) |
 | `muxer` | true | Build the `faam` command-line tool (`libfaam` is always built) |
-| `resampler` | true | Build the `faar` command-line tool (`libfaar` is always built) |
-| `muxer-video` | true | `libfaam`: H.264/H.265 video tracks |
 | `muxer-fragmented` | true | `libfaam`: fragmented MP4 recording and demuxing |
-| `sbr-decimation` | 1 | Encoder SBR analysis density (1 = full quality, up to 8 = faster) |
+| `muxer-video` | true | `libfaam`: H.264/H.265 video tracks |
+| `resampler` | true | Build the `faar` command-line tool (`libfaar` is always built) |
 | `resampler-float` | false | Use the float-only resampler engine for FPU-less targets; the default mixed build uses double at High quality |
+| `sbr-decimation` | 1 | Encoder SBR analysis density (1 = full quality, up to 8 = faster) |
 | `stats` | false | End-of-stream diagnostics on stderr (instrumentation only) |
 
 ## Library APIs
