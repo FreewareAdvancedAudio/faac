@@ -54,11 +54,11 @@ extern "C" {
 #include <stdint.h>
 
 /*
- * Tracks the libfaac SONAME, not the project release version. Lets callers
- * tell this faac_* API (SONAME >= 1) apart from the removed legacy faacEnc*
- * one (SONAME 0):
+ * The project release version, which every library reports; SONAMEs are
+ * versioned separately. The removed legacy faacEnc* header never defined it,
+ * so callers can tell this faac_* API apart by its presence:
  *
- *   #if defined(FAAC_VERSION_MAJOR) && (FAAC_VERSION_MAJOR >= 1)
+ *   #if defined(FAAC_VERSION_MAJOR)
  */
 #define FAAC_VERSION_MAJOR 3
 #define FAAC_VERSION_MINOR 0

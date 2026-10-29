@@ -620,8 +620,8 @@ against ABI 2. To compile source against either header:
 #endif
 ```
 
-`FAAC_VERSION_MAJOR` identifies the library ABI, not the project release.
-Version 3.0 moved FAAC, FAAD and FAAM to one project version and SONAME 3 without changing
+`FAAC_VERSION_MAJOR` is the project release's major version; the SONAME is versioned
+separately. Version 3.0 moved FAAC, FAAD and FAAM to one project version without changing
 the `faac_*` API, so code written for ABI 2 builds and runs unchanged.
 An ABI 1 binary must not load ABI 2 as a drop-in replacement. Do not cast
 legacy configuration or handle types to the new public types; migrate the
