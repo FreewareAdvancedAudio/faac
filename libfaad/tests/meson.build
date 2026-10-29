@@ -104,6 +104,12 @@ if get_option('encoder')
             args: [case_name], timeout: 120)
     endforeach
 
+    test_faad_pce = executable('test_faad_pce', 'test_faad_pce.c',
+        c_args: faad_c_args + test_static_args,
+        include_directories: ['..', '../..', '../../include', common_inc],
+        link_with: [libfaad, libfaac], dependencies: [libm])
+    test('test_integration_faad_pce', test_faad_pce, timeout: 120)
+
     test_faad_drc = executable('test_faad_drc', 'test_faad_drc.c',
         c_args: faad_c_args + test_static_args,
         include_directories: ['..', '../..', '../../include', common_inc],

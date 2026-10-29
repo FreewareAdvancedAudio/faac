@@ -793,6 +793,9 @@ int run_decoding_session_ext(const decode_options_t *opts,
             ret_status = DECODE_ERROR;
             goto cleanup;
         }
+        /* A layout in a program config element has to go into the frames themselves. */
+        uint8_t adts_pce[512];
+        uint32_t adts_pce_len = adts_p.channel_cfg ? 0 : asc_pce_element(track.asc_buf, &asc.pce, adts_pce, sizeof(adts_pce));
         FILE *fadts = cli_fopen(adts_outfile, "wb");
         if (!fadts) {
             log_msgf(log_cb, user_data, 0, "Error opening ADTS output file %s\n", adts_outfile);
@@ -802,7 +805,7 @@ int run_decoding_session_ext(const decode_options_t *opts,
         for (uint32_t s = 0; s < track.num_samples; s++) {
             uint64_t offset = track.samples[s].offset;
             uint32_t size = track.samples[s].size;
-            if (size > ADTS_MAX_FRAME - ADTS_HEADER_SIZE) {
+            if (size > ADTS_MAX_FRAME - ADTS_HEADER_SIZE - adts_pce_len) {
                 log_msgf(log_cb, user_data, 0, "%s: sample %u (%u bytes) exceeds the ADTS payload limit\n",
                         infile, (unsigned)s, (unsigned)size);
                 ret_status = DECODE_ERROR;
@@ -810,14 +813,26 @@ int run_decoding_session_ext(const decode_options_t *opts,
             }
             if (offset > 0 && offset <= file_len && size <= file_len - offset) {
                 uint8_t adts_hdr[ADTS_HEADER_SIZE];
-                adts_write_header(&adts_p, size, adts_hdr);
-                fwrite(adts_hdr, 1, sizeof(adts_hdr), fadts);
+                uint32_t pce_bytes = 0;
                 if (memory_input) {
+                    pce_bytes = adts_pce_bytes(adts_pce_len, s, inbuf + offset, size);
+                    adts_write_header(&adts_p, size + pce_bytes, adts_hdr);
+                    fwrite(adts_hdr, 1, sizeof(adts_hdr), fadts);
+                    if (pce_bytes) fwrite(adts_pce, 1, pce_bytes, fadts);
                     if (fwrite(inbuf + offset, 1, size, fadts) != size) { ret_status = DECODE_ERROR; break; }
                     continue;
                 }
                 if (!cli_fseek(fin, offset)) { ret_status = DECODE_ERROR; break; }
                 uint32_t remaining = size;
+                /* The first bytes tell whether the block already opens with a PCE. */
+                size_t first = remaining < INPUT_BUFFER_SIZE ? remaining : INPUT_BUFFER_SIZE;
+                if (fread(inbuf, 1, first, fin) != first) { ret_status = DECODE_ERROR; break; }
+                pce_bytes = adts_pce_bytes(adts_pce_len, s, inbuf, (uint32_t)first);
+                adts_write_header(&adts_p, size + pce_bytes, adts_hdr);
+                fwrite(adts_hdr, 1, sizeof(adts_hdr), fadts);
+                if (pce_bytes) fwrite(adts_pce, 1, pce_bytes, fadts);
+                if (fwrite(inbuf, 1, first, fadts) != first) { ret_status = DECODE_ERROR; break; }
+                remaining -= (uint32_t)first;
                 while (remaining) {
                     size_t n = remaining < INPUT_BUFFER_SIZE ? remaining : INPUT_BUFFER_SIZE;
                     if (fread(inbuf, 1, n, fin) != n || fwrite(inbuf, 1, n, fadts) != n) {

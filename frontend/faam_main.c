@@ -171,7 +171,7 @@ static const help_t help_inspect[] = {
      "Progress and completion messages go to stderr if extracted media is sent to stdout."},
     {"--format <raw|adts>",
      "demux: choose AAC output format explicitly; default is inferred from the output filename (raw for stdout)",
-     "This option applies only to AAC tracks. ADTS output requires codec configuration that can be represented in an ADTS header."},
+     "This option applies only to AAC tracks. ADTS output requires codec configuration that can be represented in an ADTS header; a layout held in a program config element is written into the first frame and every 32nd after it."},
     {"-t, --track <id>",
      "demux: track ID to extract (default: the first track)",
      "Use the track IDs reported by faam info. If the file has no track with the requested ID, extraction fails."},
@@ -1059,9 +1059,28 @@ static uint8_t *read_whole_file(FILE *f, size_t *out_len, const char **why)
 typedef struct {
     adts_params params;
     uint64_t start; /* offset of the first frame, past any ID3v2 tag */
-    uint8_t prefix[10];
-    uint8_t prefix_len;
+    uint8_t prefix[ADTS_MAX_FRAME]; /* what was read from a pipe, to replay */
+    uint16_t prefix_len;
+    /* Channel configuration 0: the program config element opening the first frame,
+     * and the bytes its fields are read from. */
+    AscPce pce;
+    uint8_t pce_src[512];
 } adts_info;
+
+/* Reads the layout of a stream whose headers say channel configuration 0 from the
+ * program config element the first frame opens with. */
+static const char *adts_first_pce(const uint8_t *frame, uint32_t frame_len, uint32_t header_len, adts_info *out)
+{
+    uint32_t n = frame_len - header_len;
+    if (n > sizeof(out->pce_src)) n = sizeof(out->pce_src);
+    if (!n || (frame[header_len] >> 5) != 5) /* ID_PCE */
+        return "unsupported ADTS stream (channel configuration 0 without a program config element opening the first frame)";
+    memcpy(out->pce_src, frame + header_len, n);
+    asc_bitreader br = { out->pce_src, n * 8, 3 };
+    if (!asc_parse_pce(&br, &out->pce))
+        return "unsupported ADTS stream (damaged program config element in the first frame)";
+    return NULL;
+}
 
 /* Validates the first ADTS header of f and leaves the position unspecified.
  * Returns NULL, or what is wrong with the input. */
@@ -1092,19 +1111,32 @@ static const char *adts_probe(FILE *f, adts_info *out)
         got = fread(h, 1, 7, f);
         if (streaming && got) {
             memcpy(out->prefix, h, got);
-            out->prefix_len = (uint8_t)got;
+            out->prefix_len = (uint16_t)got;
         }
     } else if (streaming) {
         memcpy(out->prefix, h, got);
-        out->prefix_len = (uint8_t)got;
+        out->prefix_len = (uint16_t)got;
     }
     if (got < 7 || !adts_header_ok(h)) return "not an ADTS stream (no valid frame header at the start)";
 
     adts_parse_header(h, &out->params);
-    if (out->params.channel_cfg == 0) return "unsupported ADTS stream (channel configuration is in the stream, not the header)";
     if (out->params.raw_blocks != 0)
         return "unsupported ADTS stream (more than one raw data block per frame; each frame is muxed as one 1024-sample unit)";
     if (adts_frame_length(h) < adts_header_length(h)) return "not an ADTS stream (first frame length is impossible)";
+    if (out->params.channel_cfg == 0) {
+        uint32_t frame_len = adts_frame_length(h), header_len = adts_header_length(h);
+        uint8_t frame[ADTS_MAX_FRAME];
+        size_t have = got < frame_len ? got : frame_len;
+        memcpy(frame, h, have);
+        if (fread(frame + have, 1, frame_len - have, f) != frame_len - have)
+            return "not an ADTS stream (the first frame is truncated)";
+        const char *why = adts_first_pce(frame, frame_len, header_len, out);
+        if (why) return why;
+        if (streaming) {
+            memcpy(out->prefix, frame, frame_len);
+            out->prefix_len = (uint16_t)frame_len;
+        }
+    }
     out->start = start;
     return NULL;
 }
@@ -1124,6 +1156,8 @@ typedef struct {
     FILE *output;
     bool adts_output;
     adts_params adts;
+    uint8_t pce[512]; /* with channel configuration 0, the element the frames must open with */
+    uint32_t pce_len;
     bool write_failed;
     bool frame_too_large;
     uint32_t frames;
@@ -1150,13 +1184,15 @@ static bool demux_write_sample(void *user, const faam_frame_loc *loc,
         }
     } else {
         if (ctx->adts_output && ctx->track.codec_id == FAAM_CODEC_AAC) {
-            if (frame_bytes > ADTS_MAX_FRAME - ADTS_HEADER_SIZE) {
+            uint32_t pce_bytes = adts_pce_bytes(ctx->pce_len, ctx->frames, frame, frame_bytes);
+            if (frame_bytes + pce_bytes > ADTS_MAX_FRAME - ADTS_HEADER_SIZE) {
                 ctx->frame_too_large = true;
                 return false;
             }
             uint8_t adts[ADTS_HEADER_SIZE];
-            adts_write_header(&ctx->adts, frame_bytes, adts);
+            adts_write_header(&ctx->adts, frame_bytes + pce_bytes, adts);
             ctx->write_failed |= fwrite(adts, 1, sizeof(adts), ctx->output) != sizeof(adts);
+            ctx->write_failed |= pce_bytes && fwrite(ctx->pce, 1, pce_bytes, ctx->output) != pce_bytes;
         }
         ctx->write_failed |= fwrite(frame, 1, frame_bytes, ctx->output) != frame_bytes;
     }
@@ -1468,6 +1504,10 @@ static int cmd_mux(int argc, char **argv)
             build.object_type = (uint8_t)(adts[i].params.profile + 1);
             build.sr_idx = adts[i].params.sr_idx;
             build.channels = adts[i].params.channel_cfg;
+            if (!build.channels) {
+                build.pce = &adts[i].pce;
+                build.pce_src = adts[i].pce_src;
+            }
             if (strcmp(sbr_signaling, "none") != 0) {
                 build.sbr_present = true;
                 build.sbr_sr_idx = adts[i].params.sr_idx >= 3 ? adts[i].params.sr_idx - 3 : 0; /* double rate: table 1.16 steps by 3 */
@@ -1486,7 +1526,7 @@ static int cmd_mux(int argc, char **argv)
             tc[i].codec_id = FAAM_CODEC_AAC;
             tc[i].sample_rate = asc_codec_sample_rates[adts[i].params.sr_idx];
             tc[i].timescale = tc[i].sample_rate;
-            tc[i].channels = channels_of_config[adts[i].params.channel_cfg];
+            tc[i].channels = build.channels ? channels_of_config[build.channels] : adts[i].pce.channels;
             memcpy(tc[i].language, language, 3);
             tc[i].codec_data = asc_buf[i];
             tc[i].codec_data_len = asc_len[i];
@@ -1804,6 +1844,8 @@ static int cmd_demux(int argc, char **argv)
     bool is_adts_out = output_format == 2 ||
         (output_format == 0 && (strstr(output_file, ".aac") != NULL || strstr(output_file, ".adts") != NULL));
     adts_params adts_p = {0};
+    uint8_t adts_pce[512];
+    uint32_t adts_pce_len = 0;
     if (is_adts_out && ti.track_type == FAAM_TRACK_AUDIO && ti.codec_id == FAAM_CODEC_AAC) {
         uint8_t cdata[FAAM_CODEC_DATA_MAX];
         uint32_t cdata_len = 0;
@@ -1818,6 +1860,13 @@ static int cmd_demux(int argc, char **argv)
         if (why) {
             fprintf(stderr, "Error: track %u cannot be written as ADTS, %s\n", ti.track_id, why);
             goto done;
+        }
+        if (!adts_p.channel_cfg) {
+            adts_pce_len = asc_pce_element(cdata, &asc.pce, adts_pce, sizeof(adts_pce));
+            if (!adts_pce_len) {
+                fprintf(stderr, "Error: track %u cannot be written as ADTS, its program config element does not fit a frame\n", ti.track_id);
+                goto done;
+            }
         }
     }
 
@@ -1856,7 +1905,8 @@ static int cmd_demux(int argc, char **argv)
     out_created = !demux_stdout;
 
     demux_output_context output_ctx = { .track = ti, .output = fout,
-                                        .adts_output = is_adts_out, .adts = adts_p };
+                                        .adts_output = is_adts_out, .adts = adts_p, .pce_len = adts_pce_len };
+    memcpy(output_ctx.pce, adts_pce, adts_pce_len);
     mux_progress_context progress = {0};
     progress_throttle_reset(&progress.throttle);
     st = faam_engine_demux_track(d, &ti, demux_write_sample, &output_ctx,
