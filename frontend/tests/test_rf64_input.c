@@ -109,7 +109,7 @@ static bool check_float_endian(void)
         float pcm[2];
         bool ok = fwrite(samples[be], 1, 8, file) == 8 && cli_fseek(file, 0) &&
                   wav_read_float32(&f, pcm, 2, NULL) == 2 &&
-                  pcm[0] == 8192.0f && pcm[1] == -16384.0f;
+                  pcm[0] == 0.25f && pcm[1] == -0.5f;
         fclose(file);
         if (!ok) return false;
     }
