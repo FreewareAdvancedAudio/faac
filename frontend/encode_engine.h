@@ -149,7 +149,7 @@ typedef struct {
     bool use_pns;
     uint32_t bandwidth;
     uint16_t quant_quality;
-    uint32_t bit_rate; /* bps per channel */
+    uint32_t bit_rate; /* bps, whole stream; 0 in VBR */
     enum faac_rate_control rate_control; /* resolved: VBR, ABR or CBR */
 
     bool remapping_channels;
