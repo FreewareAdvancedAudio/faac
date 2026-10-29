@@ -38,7 +38,7 @@
 _Static_assert(sizeof(enum faac_status)        == 4, "faac_status must be 32-bit");
 _Static_assert(sizeof(enum faac_object_type)   == 4, "faac_object_type must be 32-bit");
 _Static_assert(sizeof(enum faac_rate_control)  == 4, "faac_rate_control must be 32-bit");
-_Static_assert(sizeof(enum faac_stereo_mode)    == 4, "faac_stereo_mode must be 32-bit");
+_Static_assert(sizeof(enum faac_stereo_mode)   == 4, "faac_stereo_mode must be 32-bit");
 _Static_assert(sizeof(enum faac_shortctl_mode) == 4, "faac_shortctl_mode must be 32-bit");
 _Static_assert(sizeof(enum faac_stream_format) == 4, "faac_stream_format must be 32-bit");
 _Static_assert(sizeof(enum faac_input_format)  == 4, "faac_input_format must be 32-bit");
@@ -124,12 +124,12 @@ FAACAPI faac_status faac_params_init(faac_params *params, uint32_t caller_size)
 
     memset(&tmp, 0, sizeof(tmp));
     tmp.object_type   = FAAC_OBJ_LC;
-    tmp.stereo_mode    = FAAC_STEREO_AUTO;
+    tmp.stereo_mode   = FAAC_STEREO_AUTO;
     tmp.flags         = FAAC_FLAG_TNS | FAAC_FLAG_PNS;
     tmp.bit_rate      = 0;              /* ABR default: 64 kbit/s per channel */
     tmp.bandwidth     = 0;              /* derive from bit_rate */
-    tmp.quality = 0;              /* derive from bit_rate */
-    tmp.peak_bit_rate  = 0;              /* no per-frame peak cap */
+    tmp.quality       = 0;              /* derive from bit_rate */
+    tmp.peak_bit_rate = 0;              /* no per-frame peak cap */
     tmp.rate_control  = FAAC_RC_ABR;
     tmp.stream_format = FAAC_STREAM_ADTS;
     tmp.input_format  = FAAC_INPUT_16BIT;
@@ -168,7 +168,7 @@ static faac_status validate_params(const faac_params *p, uint64_t *bit_rate_per_
     }
     switch (p->stereo_mode) {
         case FAAC_STEREO_LR: case FAAC_STEREO_MS:
-        case FAAC_STEREO_IS:   case FAAC_STEREO_AUTO: break;
+        case FAAC_STEREO_IS: case FAAC_STEREO_AUTO: break;
         default: return FAAC_ERR_INVALID_ARGUMENT;
     }
     switch (p->short_control) {
@@ -228,8 +228,7 @@ static faac_status validate_params(const faac_params *p, uint64_t *bit_rate_per_
          * controllers actively fight: rate control raises quality to reach
          * bit_rate while the limiter cuts it to stay under the cap, so frames
          * end up larger the tighter the cap gets. Reject it rather than emit a
-         * stream that quietly busts the ceiling it was asked to respect.
-         * stream bit_rate. */
+         * stream that quietly busts the ceiling it was asked to respect. */
         if (p->peak_bit_rate < bit_rate)
             return FAAC_ERR_INVALID_ARGUMENT;
     }

@@ -297,8 +297,8 @@ static char *format_encoding_params(const encode_options_t *opts, const faac_enc
     if (num_channels >= 2) {
         switch (opts->joint_mode) {
         case FAAC_STEREO_LR:  ADD(", stereo L/R"); break;
-        case FAAC_STEREO_MS:    ADD(", stereo M/S"); break;
-        case FAAC_STEREO_IS:    ADD(", stereo IS"); break;
+        case FAAC_STEREO_MS:  ADD(", stereo M/S"); break;
+        case FAAC_STEREO_IS:  ADD(", stereo IS"); break;
         default: break;
         }
     }
