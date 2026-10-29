@@ -1,6 +1,6 @@
 # Unit tests; encoder tests reach libfaac only through the static archive.
 if is_variable('libfaac_static')
-    foreach t : ['chunking', 'frames', 'bitstream']
+    foreach t : ['chunking', 'float', 'frames', 'bitstream']
         test('test_unit_faac_' + t,
             executable('test_faac_' + t, 'test_faac_' + t + '.c',
                 include_directories: ['..', '../..', '../../include'],

@@ -319,12 +319,12 @@ clamped to the available range. Read effective values with `get_info()`.
 | `FAAC_INPUT_16BIT` | Native-endian signed `int16_t`, full scale | `int16_t` |
 | `FAAC_INPUT_24BIT` | Native-endian packed signed three-byte samples, full scale | Any |
 | `FAAC_INPUT_24IN32` | Native-endian `int32_t` holding a sign-extended 24-bit sample, not full-scale 32-bit PCM | `int32_t` |
-| `FAAC_INPUT_FLOAT` | 32-bit float on the signed-16-bit scale (approximately −32768 to +32767) | `float` |
+| `FAAC_INPUT_FLOAT` | 32-bit float, unity full scale (±1.0) | `float` |
 
-All formats are interleaved. Convert normalized float PCM by multiplying by
-32768; convert full-scale 32-bit PCM to 24-bit scale before passing it.
-In particular, FAAD's float and 32-bit outputs require conversion for FAAC.
-NaN, infinity and float magnitudes at least 8388608 are replaced with silence;
+All formats are interleaved. Pass normalized floats directly; FAAD's float
+and 24-in-32 outputs can be fed back as they are. Convert full-scale 32-bit
+PCM to 24-bit scale before passing it.
+NaN, infinity and float magnitudes of 256 or more are replaced with silence;
 this is not a clipping or normalization service.
 
 ### Channel ordering and ownership
@@ -640,6 +640,7 @@ calls and rebuild.
 | `FAAC_OBJ_LOW` | `FAAC_OBJ_LC`. |
 | `output_format` | `stream_format`. |
 | `FAAC_INPUT_32BIT` | `FAAC_INPUT_24IN32`; unchanged signed 24-bit scale in a native-endian 32-bit word. |
+| `FAAC_INPUT_FLOAT` on the signed-16-bit scale | Pass unity-full-scale floats (±1.0); remove the multiplication by 32768 for normalized input. A caller that keeps the old scale compiles cleanly, and every sample of 256 or more is encoded as silence. |
 | `mpeg_version`, `FAAC_MPEG4`, `FAAC_MPEG2` | `FAAC_STREAM_ADTS` is MPEG-4 and `FAAC_STREAM_ADTS_MPEG2` is MPEG-2; raw MPEG-2 frames are no longer expressible. `faac_encoder_info.stream_format` reports the resolved format (HE-AAC forces MPEG-4). |
 | `use_tns`, `use_pns` | Set `flags` with `FAAC_FLAG_TNS` and `FAAC_FLAG_PNS`; both are on by default and unknown bits are rejected. |
 | `faac_encoder_asc()` as the only way to read the ASC | The ASC is also in `faac_encoder_info.asc` and `asc_size`, valid as soon as `faac_encoder_open()` returns. `faac_encoder_get_info()` and `faac_encoder_asc()` take a const handle. |
