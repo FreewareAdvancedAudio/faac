@@ -170,9 +170,10 @@ def info_tags(out):
 
 
 def main():
-    global CHANNELS, MAX_CHANNELS, ENCODER_SBR
+    global CHANNELS, MAX_CHANNELS, ENCODER_SBR, ENCODER_PS
     MAX_CHANNELS = int(sys.argv[4])
     ENCODER_SBR = sys.argv[5] == "true"
+    ENCODER_PS = sys.argv[6] == "true"
     CHANNELS = min(2, MAX_CHANNELS)
     tools = Tools(*[os.path.abspath(p) for p in sys.argv[1:4]])
     with tempfile.TemporaryDirectory() as d:
@@ -290,6 +291,16 @@ def run_all(t, d):
         for ext, flag in (("aac", ["-a"]), ("m4a", [])):
             r = t.run(t.faac, ["-v0"] + extra + flag + ["-o", f"{name}.{ext}", "s.wav"], d)
             check(r.returncode == 0, f"faac {name}.{ext}")
+
+    # AUTO picks HE-AAC v2 below the old 8 kbps stereo floor when PS is built.
+    if ENCODER_PS and CHANNELS == 2:
+        r = t.run(t.faac, ["-v0", "--object-type", "auto", "-b", "6", "-o", "ps_auto.m4a", "s.wav"], d)
+        check(r.returncode == 0, "faac auto low-rate PS encode")
+        info = t.faam_run(["info", "ps_auto.m4a"], d).stdout
+        text = info.decode()
+        check(any(line.strip().startswith("AAC Object Type") and "HE-AAC v2" in line
+                  for line in text.splitlines()), f"low-rate AUTO signals HE-AAC v2:\n{text}")
+        check("HE v2" in info_tags(info), "low-rate AUTO tag names HE v2: " + info_tags(info))
 
     # Resampling is visible in the encoder tag only when the rates differ.
     r = t.run(t.faac, ["-v0", "--object-type", "lc", "--rate", "32000", "-b", "8",

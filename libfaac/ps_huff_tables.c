@@ -12,9 +12,9 @@
  */
 #include "ps_huff_tables.h"
 #define PS_PACK(code, len)                                                                         \
-    {(uint8_t)((((uint32_t)(code) << 5) | (uint32_t)(len)) & 0xffu),                               \
-     (uint8_t)((((uint32_t)(code) << 5) | (uint32_t)(len)) >> 8),                                  \
-     (uint8_t)((((uint32_t)(code) << 5) | (uint32_t)(len)) >> 16)}
+    {{(uint8_t)((((uint32_t)(code) << 5) | (uint32_t)(len)) & 0xffu),                              \
+      (uint8_t)((((uint32_t)(code) << 5) | (uint32_t)(len)) >> 8),                                 \
+      (uint8_t)((((uint32_t)(code) << 5) | (uint32_t)(len)) >> 16)}}
 
 /* Keep encoder analysis constants out of decoder builds to limit data size. */
 const int8_t ps_iid_db_fine[31] = {-50, -45, -40, -35, -30, -25, -22, -19, -16, -13, -10,
