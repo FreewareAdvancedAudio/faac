@@ -309,6 +309,7 @@ polyphase banks and immutable FFT twiddles. Each stream allocates its own histor
 queues and FFT workspace, and streams can run concurrently. `faar_resampler_open()`
 remains available for standalone streams.
 
+```
 faar_design *design = NULL;
 faar_resampler *left = NULL, *right = NULL;
 faar_status status = faar_design_open(&config, &design);
