@@ -68,11 +68,6 @@ static unsigned int rate_mode_to_core(enum faac_rate_control mode)
     return mode == FAAC_RC_VBR ? RATE_VBR : mode == FAAC_RC_CBR ? RATE_CBR : RATE_ABR;
 }
 
-static enum faac_rate_control rate_mode_from_core(unsigned int mode)
-{
-    return mode == RATE_VBR ? FAAC_RC_VBR : mode == RATE_CBR ? FAAC_RC_CBR : FAAC_RC_ABR;
-}
-
 /* ABR and CBR default to 64 kbit/s for every channel; VBR carries no rate. */
 static uint64_t resolved_bit_rate(const faac_params *p)
 {
@@ -376,18 +371,13 @@ FAACAPI faac_status faac_encoder_get_info(const faac_encoder *encoder, faac_enco
     memset(&info, 0, sizeof(info));
     info.frame_samples    = faacFrameSamples(h);
     info.max_output_bytes = (uint32_t)ADTS_FRAMESIZE;
-    /* The handle holds the halved core rate for HE-AAC; report the rate the
-     * decoder reconstructs. */
-    info.sample_rate      = (uint32_t)SbrContextGetFullRate(h->sbrContext, h->sampleRate);
     info.object_type      = (enum faac_object_type)h->config.aacObjectType;
     info.bit_rate         = (uint32_t)((uint64_t)h->config.bitRate * h->numChannels);
     info.bandwidth        = (uint32_t)h->config.bandWidth;
-    info.quality    = (uint32_t)h->config.quantqual;
+    info.quality        = (uint32_t)h->config.quantqual;
     info.stream_format    = h->config.outputFormat == RAW_STREAM ? FAAC_STREAM_RAW :
         h->config.mpegVersion == MPEG2 ? FAAC_STREAM_ADTS_MPEG2 : FAAC_STREAM_ADTS;
-    info.peak_bit_rate     = (uint32_t)h->config.maxBitRate;
     info.encoder_delay    = faacEncoderDelay(h);
-    info.rate_control     = rate_mode_from_core(h->config.rateControl);
     info.asc_size         = h->ascLen;
     memcpy(info.asc, h->asc, h->ascLen);
 
