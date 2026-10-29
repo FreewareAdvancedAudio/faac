@@ -19,7 +19,7 @@
 #include "dft_prefilter.h"
 #include "../common/atomic.h"
 #include <limits.h>
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
 #include "fft_float2.h"
 #endif
 #include <stdalign.h>
@@ -100,7 +100,7 @@ struct faar_resampler_struct {
     double beta;
     faar_sample_t *polyphase_table; /* Half-bank and interpolation guards, shared by all channels */
     faar_sample_t *polyphase_reverse_table; /* Reversed exact rows, avoids per-output coefficient copies */
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
     float *polyphase_low_table; /* Low words of High's filter coefficients. */
 #endif
 #ifdef FAAR_WIDE_HIGH
@@ -675,7 +675,7 @@ static void store_coefficient(faar_resampler *r, size_t at, double val) {
     }
 #endif
     r->polyphase_table[at] = (faar_sample_t)val;
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
     if (r->polyphase_low_table)
         r->polyphase_low_table[at] = (float)(val - (double)r->polyphase_table[at]);
 #endif
@@ -793,7 +793,7 @@ static faar_resampler * create_resampler_internal(uint32_t in_rate, uint32_t out
     /* The short exact banks (up to the 41-tap upsampling banks) repay a
      * second oriented copy; keep generic banks compact and let their
      * uncommon exact reverse phase use the stack path. */
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
     if (quality == FAAR_QUALITY_HIGH) {
         size_t bytes = stored_phases * r->filter_len * sizeof(float);
         r->polyphase_low_table = aligned_malloc(bytes);
@@ -802,7 +802,7 @@ static faar_resampler * create_resampler_internal(uint32_t in_rate, uint32_t out
     }
 #endif
     if (r->exact_phase_bank && r->filter_len <= reverse_table_max_len
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
             && !r->polyphase_low_table
 #endif
             ) {
@@ -903,7 +903,7 @@ static faar_resampler * create_resampler_internal(uint32_t in_rate, uint32_t out
 #endif
         if (normalize_phase && sum > 0.0) {
             for (size_t j = 0; j < r->filter_len; j++) {
-#ifndef FAAR_COMPENSATED_FLOAT
+#ifdef FAAR_WIDE_HIGH
                 phase_coeffs[j] /= (float)sum;
 #else
                 if (r->polyphase_low_table) {
@@ -1024,7 +1024,7 @@ static int reserve_history(faar_resampler *r, size_t additional, bool exact) {
     }
     if (needed <= r->hist_cap_per_ch) return 0;
     if (r->prepared) {
-        r->last_error = FAAR_ERR_INSUFFICIENT_MEM;
+        r->last_error = FAAR_ERR_NO_MEMORY;
         return -1;
     }
     size_t growth = exact ? 1 : 2;
@@ -1043,7 +1043,7 @@ static int reserve_history(faar_resampler *r, size_t additional, bool exact) {
     for (uint16_t c = 0; c < r->channels; ++c) {
         faar_sample_t *next = aligned_malloc(capacity * sizeof(*next));
         if (!next) {
-            r->last_error = FAAR_ERR_INSUFFICIENT_MEM;
+            r->last_error = FAAR_ERR_NO_MEMORY;
             return -1;
         }
         memcpy(next, r->hist[c], r->hist_len * sizeof(*next));
@@ -1086,7 +1086,7 @@ static faar_status prepare_internal(faar_resampler *r, size_t max_input,
         if (intermediate > SIZE_MAX / r->channels / sizeof(float))
             return FAAR_ERR_INVALID_ARGUMENT;
         if (!r->stage2) {
-            if (ensure_dft_intermediate(r, intermediate)) return FAAR_ERR_INSUFFICIENT_MEM;
+            if (ensure_dft_intermediate(r, intermediate)) return FAAR_ERR_NO_MEMORY;
             memset(r->dft_intermediate, 0,
                    r->dft_intermediate_capacity * r->channels * sizeof(float));
         }
@@ -1229,7 +1229,7 @@ static size_t polyresample_process_single(faar_resampler * restrict r, const flo
         bool reverse;
         size_t p_idx;
         faar_sample_t delta;
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
         faar_float2 precise_delta = ff2(0);
 #endif
 #ifdef FAAR_WIDE_HIGH
@@ -1254,7 +1254,7 @@ static size_t polyresample_process_single(faar_resampler * restrict r, const flo
                 delta = 1;
             }
         }
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
         else if (r->polyphase_low_table) {
             reverse = 2 * phase_remainder > r->out_rate;
             uint32_t numerator = (uint32_t)(reverse ? r->out_rate - phase_remainder : phase_remainder);
@@ -1306,7 +1306,7 @@ static size_t polyresample_process_single(faar_resampler * restrict r, const flo
             break;
         }
 
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
         if (r->polyphase_low_table) {
             if (r->exact_phase_bank) precise_delta = ff2(delta);
             filter_precise_phase(r, sample_base_idx, p_idx, precise_delta, reverse,
@@ -1393,9 +1393,7 @@ static size_t polyresample_process_single(faar_resampler * restrict r, const flo
             }
         }
 
-#if defined(FAAR_COMPENSATED_FLOAT) || defined(FAAR_WIDE_HIGH)
 advance_output:
-#endif
         out_frames++;
         base_idx += (size_t)step_whole;
         phase_remainder += step_remainder;
@@ -1445,7 +1443,7 @@ static size_t process_internal(faar_resampler * restrict r, const float * restri
         }
         size_t temp_capacity = in_count * r->dft_expansion + 8192;
         if (!r->stage2 && ensure_dft_intermediate(r, temp_capacity)) {
-            r->last_error = FAAR_ERR_INSUFFICIENT_MEM;
+            r->last_error = FAAR_ERR_NO_MEMORY;
             return 0;
         }
         size_t filtered = 0;
@@ -1550,7 +1548,7 @@ static size_t flush_internal(faar_resampler * r, float *out_samples, size_t max_
         max_out_count = output_capacity(r, max_out_count);
         const size_t temp_capacity = 8192;
         if (!r->stage2 && ensure_dft_intermediate(r, temp_capacity)) {
-            r->last_error = FAAR_ERR_INSUFFICIENT_MEM;
+            r->last_error = FAAR_ERR_NO_MEMORY;
             return 0;
         }
         size_t produced = 0, filtered;
@@ -1621,7 +1619,7 @@ static void destroy_internal(faar_resampler * r) {
         aligned_free(r->polyphase_wide_table);
         aligned_free(r->polyphase_wide_reverse);
 #endif
-#ifdef FAAR_COMPENSATED_FLOAT
+#ifndef FAAR_WIDE_HIGH
         if (r->polyphase_low_table) aligned_free(r->polyphase_low_table);
 #endif
     }
@@ -1701,7 +1699,7 @@ FAARAPI faar_status faar_design_open(const faar_config *config, faar_design **ou
     faar_status status = open_stream(config, &prototype, false);
     if (status != FAAR_OK) return status;
     faar_design *plan = AllocMemory(sizeof(*plan));
-    if (!plan) { destroy_internal(prototype); return FAAR_ERR_INSUFFICIENT_MEM; }
+    if (!plan) { destroy_internal(prototype); return FAAR_ERR_NO_MEMORY; }
 #if !defined(__STDC_NO_ATOMICS__) && defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
     atomic_init(&plan->references, 1);
 #else
@@ -1714,24 +1712,24 @@ FAARAPI faar_status faar_design_open(const faar_config *config, faar_design **ou
     return FAAR_OK;
 }
 
-FAARAPI faar_status faar_design_close(faar_design **plan) {
-    if (!plan) return FAAR_ERR_INVALID_ARGUMENT;
-    if (*plan) plan_release(*plan);
-    *plan = NULL;
+FAARAPI faar_status faar_design_close(faar_design **design) {
+    if (!design) return FAAR_ERR_INVALID_ARGUMENT;
+    if (*design) plan_release(*design);
+    *design = NULL;
     return FAAR_OK;
 }
 
-FAARAPI faar_status faar_resampler_open_from_design(faar_design *plan,
+FAARAPI faar_status faar_resampler_open_from_design(faar_design *design,
                                                 faar_resampler **out) {
     if (!out) return FAAR_ERR_INVALID_ARGUMENT;
     *out = NULL;
-    if (!plan) return FAAR_ERR_INVALID_ARGUMENT;
-    if (plan_retain(plan)) return FAAR_ERR_INSUFFICIENT_MEM;
-    faar_resampler *r = clone_plan_internal(plan->prototype);
-    if (!r) { plan_release(plan); return FAAR_ERR_INSUFFICIENT_MEM; }
-    r->plan = plan;
-    if (plan->max_input_frames) {
-        faar_status st = reserve_stream(r, plan->max_input_frames);
+    if (!design) return FAAR_ERR_INVALID_ARGUMENT;
+    if (plan_retain(design)) return FAAR_ERR_NO_MEMORY;
+    faar_resampler *r = clone_plan_internal(design->prototype);
+    if (!r) { plan_release(design); return FAAR_ERR_NO_MEMORY; }
+    r->plan = design;
+    if (design->max_input_frames) {
+        faar_status st = reserve_stream(r, design->max_input_frames);
         if (st != FAAR_OK) { destroy_internal(r); return st; }
     }
     *out = r;
@@ -1750,14 +1748,14 @@ FAARAPI faar_status faar_config_init(faar_config *config, uint32_t caller_size) 
     return FAAR_OK;
 }
 
-FAARAPI faar_status faar_get_library_info(faar_library_info *out) {
-    if (!out || out->struct_size < FAAR_LIBRARY_INFO_BASELINE)
+FAARAPI faar_status faar_get_library_info(faar_library_info *out_info) {
+    if (!out_info || out_info->struct_size < FAAR_LIBRARY_INFO_BASELINE)
         return FAAR_ERR_INVALID_ARGUMENT;
-    uint32_t caller_size = out->struct_size;
+    uint32_t caller_size = out_info->struct_size;
     faar_library_info info = {0};
     info.max_channels = MAX_CHANNELS;
 #ifndef FAAR_WIDE_HIGH
-    info.features |= FAAR_FEATURE_FLOAT_ONLY;
+    info.flags |= FAAR_LIB_FLOAT_ONLY;
 #endif
     info.version = FAAR_VERSION_STRING;
     info.copyright =
@@ -1765,7 +1763,7 @@ FAARAPI faar_status faar_get_library_info(faar_library_info *out) {
         " Copyright (C) 2026, Nils Schimmelmann";
     uint32_t n = caller_size < sizeof(info) ? caller_size : sizeof(info);
     info.struct_size = n;
-    memcpy(out, &info, n);
+    memcpy(out_info, &info, n);
     return FAAR_OK;
 }
 
@@ -1774,7 +1772,7 @@ FAARAPI const char *faar_strerror(faar_status status) {
         case FAAR_OK: return "success";
         case FAAR_ERR_INVALID_ARGUMENT: return "invalid argument or state";
         case FAAR_ERR_UNSUPPORTED: return "unsupported configuration";
-        case FAAR_ERR_INSUFFICIENT_MEM: return "out of memory";
+        case FAAR_ERR_NO_MEMORY: return "out of memory";
         case FAAR_ERR_PROCESSING: return "resampling failed; discard this stream";
         default: return "unknown FAAR status";
     }
@@ -1798,7 +1796,7 @@ static faar_status open_stream(const faar_config *config, faar_resampler **out,
         return FAAR_ERR_INVALID_ARGUMENT;
     faar_resampler * r = create_resampler_internal(cfg.in_rate, cfg.out_rate,
             (uint16_t)cfg.channels, cfg.quality, cfg.decimate_factor, 0, false, 0);
-    if (!r) return FAAR_ERR_INSUFFICIENT_MEM;
+    if (!r) return FAAR_ERR_NO_MEMORY;
     if (set_dither_internal(r, dither, dither_depth) != 0) {
         destroy_internal(r);
         return FAAR_ERR_INVALID_ARGUMENT;
@@ -1836,10 +1834,10 @@ FAARAPI faar_status faar_resampler_close(faar_resampler **resampler) {
 }
 
 FAARAPI faar_status faar_resampler_get_info(const faar_resampler *resampler,
-                                             faar_resampler_info *out) {
-    if (!resampler || !out || out->struct_size < FAAR_RESAMPLER_INFO_BASELINE)
+                                             faar_resampler_info *out_info) {
+    if (!resampler || !out_info || out_info->struct_size < FAAR_RESAMPLER_INFO_BASELINE)
         return FAAR_ERR_INVALID_ARGUMENT;
-    uint32_t caller_size = out->struct_size;
+    uint32_t caller_size = out_info->struct_size;
     faar_resampler_info info = {0};
     info.decimate_factor = 1;
     for (const faar_resampler *s = resampler; s && s->stage1; s = s->stage2)
@@ -1848,7 +1846,7 @@ FAARAPI faar_status faar_resampler_get_info(const faar_resampler *resampler,
     info.delay_frames = (uint32_t)resampler->delay;
     uint32_t n = caller_size < sizeof(info) ? caller_size : sizeof(info);
     info.struct_size = n;
-    memcpy(out, &info, n);
+    memcpy(out_info, &info, n);
     return FAAR_OK;
 }
 
