@@ -24,8 +24,8 @@
  * Design summary (see docs/libfaac.md for the full narrative):
  *   - Parameters are supplied once, up front, to faac_encoder_open(), so the
  *     encoder never exists in a half-configured state and all derived values
- *     (frame size, output-buffer bound, effective sample rate, resolved object
- *     type) are known and queryable the instant open() returns.
+ *     (frame size, output-buffer bound, resolved object type) are known and
+ *     queryable the instant open() returns.
  *   - Every fallible call returns a faac_status; faac_strerror() maps a status
  *     to a human-readable string.
  *   - Fixed-width integer types and width-pinned enums keep the ABI identical
@@ -205,8 +205,8 @@ typedef struct faac_params {
     uint32_t                flags;         /* FAAC_FLAG_*; unknown bits are rejected */
 
     uint32_t                bit_rate;      /* whole-stream bits/sec; 0 = 64 kbit/s per channel in ABR/CBR, must be 0 in VBR */
-    uint32_t                bandwidth;     /* cutoff in Hz; 0 = from bit_rate, the curve's top in VBR (full band above 48 kHz at default quality or higher) */
-    uint32_t                quality;       /* VBR quality 1..5000; 0 = default; must be 0 in ABR/CBR */
+    uint32_t                bandwidth;     /* cutoff in Hz; 0 = from bit_rate, the curve's top in VBR (full band above 48 kHz at quality 100 or higher) */
+    uint32_t                quality;       /* VBR quality 1..5000, required in VBR; must be 0 in ABR/CBR */
 
     enum faac_stream_format stream_format;
     enum faac_input_format  input_format;
@@ -244,24 +244,22 @@ typedef struct faac_params {
  * Resolved encoder properties, filled by faac_encoder_get_info(). All values are
  * final: the object type is resolved (FAAC_OBJ_AUTO becomes a concrete type),
  * auto-derived rate-control defaults are filled in, and buffer sizes account for
- * the object type (e.g. HE-AAC's 2048-sample frame and full output rate). Set
- * struct_size to sizeof(faac_encoder_info) before the call; the struct grows
- * only by appending fields, so a newer library stays compatible with an older
- * caller's smaller struct.
+ * the object type (e.g. HE-AAC's 2048-sample frame). Set struct_size to
+ * sizeof(faac_encoder_info) before the call; the struct grows only by appending
+ * fields, so a newer library stays compatible with an older caller's smaller
+ * struct.
  */
 typedef struct faac_encoder_info {
     uint32_t                struct_size;      /* set by caller to sizeof(faac_encoder_info) */
 
     uint32_t                frame_samples;    /* samples/channel per full frame (1024 LC, 2048 HE) */
     uint32_t                max_output_bytes; /* upper bound on one encode() call's output          */
-    uint32_t                sample_rate;      /* nominal full output rate in Hz (HE: extended rate) */
     enum faac_object_type   object_type;      /* concrete type in effect (AUTO resolved)            */
     enum faac_stream_format stream_format;    /* resolved format (HE-AAC forces MPEG-4)              */
 
     uint32_t                bit_rate;         /* resolved whole-stream bits/sec (0 in VBR)           */
     uint32_t                bandwidth;        /* resolved cutoff in Hz                               */
     uint32_t                quality;          /* resolved quantizer quality                          */
-    uint32_t                peak_bit_rate;    /* resolved peak cap, 0 if unlimited                   */
 
     /* Priming delay in samples/channel at the output rate, as gapless tags
      * (iTunSMPB) declare it. An MP4 edit list counts in the track timescale,
@@ -269,8 +267,6 @@ typedef struct faac_encoder_info {
      * value there. Not the same as frame_samples for HE-AAC, and excludes the
      * SBR decoder delay, which decoders add themselves. */
     uint32_t                encoder_delay;
-
-    enum faac_rate_control  rate_control;     /* resolved mode                                    */
 
     /* AudioSpecificConfig for raw streams and containers, valid as soon as
      * open() returns; copy the bytes if they are needed after this struct.
@@ -317,7 +313,7 @@ typedef struct faac_library_info {
 #define FAAC_STRUCT_END(type, field) \
     (offsetof(type, field) + sizeof(((type *)0)->field))
 #define FAAC_PARAMS_BASELINE FAAC_STRUCT_END(faac_params, rate_control)
-#define FAAC_ENCODER_INFO_BASELINE FAAC_STRUCT_END(faac_encoder_info, rate_control)
+#define FAAC_ENCODER_INFO_BASELINE FAAC_STRUCT_END(faac_encoder_info, encoder_delay)
 #define FAAC_LIBRARY_INFO_BASELINE FAAC_STRUCT_END(faac_library_info, sbr_decimation)
 
 FAACAPI faac_status faac_get_library_info(faac_library_info *out_info);
