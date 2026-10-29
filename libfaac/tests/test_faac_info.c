@@ -145,11 +145,16 @@ int main(void)
     assert(info.stream_format == FAAC_STREAM_ADTS_MPEG2 && info.asc_size == 0);
     assert(faac_encoder_asc(enc, &asc, &len) == FAAC_ERR_UNSUPPORTED);
     assert(faac_encoder_close(&enc) == FAAC_OK);
+#if FAAC_ENCODER_SBR
     assert(open_with(&enc, FAAC_OBJ_HE_AAC_V1, FAAC_STREAM_ADTS_MPEG2, 0) == FAAC_OK);
     info.struct_size = sizeof info;
     assert(faac_encoder_get_info(enc, &info) == FAAC_OK);
     assert(info.stream_format == FAAC_STREAM_ADTS && info.asc_size > 0);
     assert(faac_encoder_close(&enc) == FAAC_OK);
+#else
+    /* An LC-only build refuses HE-AAC instead of opening something else. */
+    assert(open_with(&enc, FAAC_OBJ_HE_AAC_V1, FAAC_STREAM_ADTS, 0) == FAAC_ERR_UNSUPPORTED && !enc);
+#endif
 
     /* Unknown flag bits and layouts are refused. */
     assert(open_with(&enc, FAAC_OBJ_LC, FAAC_STREAM_ADTS, 4) == FAAC_ERR_INVALID_ARGUMENT && !enc);

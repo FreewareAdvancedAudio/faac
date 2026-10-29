@@ -60,9 +60,13 @@ faad_src="$root/libfaad/asc.c $root/libfaad/bits.c $root/libfaad/coupling.c $roo
 faam_src="$root/libfaam/atom_patch.c $root/libfaam/chapter.c $root/libfaam/demux.c $root/libfaam/faam_util.c $root/libfaam/metadata.c $root/libfaam/mux.c $root/libfaam/tag.c"
 
 # Source files for libfaac
-faac_src="$root/libfaac/bitstream.c $root/libfaac/blockswitch.c $root/libfaac/channels.c $root/libfaac/cpu_compute.c $root/libfaac/faac.c $root/libfaac/filtbank.c $root/libfaac/frame.c $root/libfaac/huff2.c $root/libfaac/huffdata.c $root/libfaac/quantize.c $root/libfaac/ratecontrol.c $root/libfaac/resample.c $root/libfaac/sbr_analysis.c $root/libfaac/sbr_bitstream.c $root/libfaac/sbr.c $root/libfaac/sbr_huff_tables.c $root/libfaac/stereo.c $root/libfaac/tns.c $root/libfaac/util.c"
+faac_src="$root/libfaac/bitstream.c $root/libfaac/blockswitch.c $root/libfaac/channels.c $root/libfaac/cpu_compute.c $root/libfaac/faac.c $root/libfaac/filtbank.c $root/libfaac/frame.c $root/libfaac/huff2.c $root/libfaac/huffdata.c $root/libfaac/quantize.c $root/libfaac/ratecontrol.c $root/libfaac/stereo.c $root/libfaac/tns.c $root/libfaac/util.c"
 
-# Match the Meson feature setting; PS is opt-in and its sources are optional.
+# Match the Meson feature settings: an LC-only build leaves the SBR sources out (sbr.h has stubs),
+# and PS is opt-in.
+if grep -q '^#define FAAC_ENCODER_SBR 1$' "$bd/config.h"; then
+    faac_src="$faac_src $root/libfaac/resample.c $root/libfaac/sbr_analysis.c $root/libfaac/sbr_bitstream.c $root/libfaac/sbr.c $root/libfaac/sbr_huff_tables.c"
+fi
 if grep -q '^#define FAAC_ENCODER_PS 1$' "$bd/config.h"; then
     faac_src="$faac_src $root/libfaac/ps.c $root/libfaac/ps_huff_tables.c"
 fi

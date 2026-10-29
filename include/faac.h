@@ -93,7 +93,7 @@ typedef struct faac_encoder faac_encoder;
 typedef enum faac_status {
     FAAC_OK                   = 0,
     FAAC_ERR_INVALID_ARGUMENT = -1,  /* NULL pointer, bad struct_size, or bad enum/field value */
-    FAAC_ERR_UNSUPPORTED      = -2,  /* object type not implemented, more channels than the build supports, or MPEG-2 ASC requested */
+    FAAC_ERR_UNSUPPORTED      = -2,  /* object type left out of the build, more channels than it supports, or MPEG-2 ASC requested */
     FAAC_ERR_NO_MEMORY        = -3,  /* allocation failed */
     FAAC_ERR_OUTPUT_TOO_SMALL = -4,  /* output buffer smaller than max_output_bytes */
     FAAC_ERR_INPUT_OVERFLOW   = -5,  /* in_samples exceeded the per-call frame capacity */
@@ -291,16 +291,22 @@ typedef struct faac_encoder_info {
  * never in its tail padding: struct_size cannot distinguish a new field there
  * from padding in the older layout.
  */
+enum faac_library_flag {
+    FAAC_LIB_SBR = 1u << 0,         /* HE-AAC v1 (SBR) is compiled in */
+    FAAC_LIB_PS  = 1u << 1,         /* HE-AAC v2 (Parametric Stereo) is compiled in */
+    FAAC_LIB_FLAG_MAX = 0x7fffffff
+};
+
 typedef struct faac_library_info {
     uint32_t                struct_size;    /* set by caller to sizeof(faac_library_info) */
-
-    uint32_t                max_channels;   /* highest channels this build accepts */
 
     const char             *version;        /* library version string   (library-owned) */
     const char             *copyright;      /* library copyright string (library-owned) */
 
+    uint32_t                max_channels;   /* highest channels this build accepts */
     uint32_t                sbr_decimation; /* HE-AAC SBR analysis density: every Nth slot
                                              * is analysed (1 = full quality). Build-time. */
+    uint32_t                flags;          /* FAAC_LIB_* */
 } faac_library_info;
 
 /* Offset just past the named field: the smallest struct size the library accepts. */
