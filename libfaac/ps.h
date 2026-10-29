@@ -41,7 +41,7 @@ typedef struct PsHybrid {
     int initialized;
 } PsHybrid;
 
-void PsHybridAnalyze(PsHybrid *, const float[2][3][44][2], float[2][4][64], float[4][64],
+void PsHybridAnalyze(PsHybrid *, float[2][3][44][2], float[2][4][64], float[4][64],
                      float[4][64], int);
 
 typedef struct PsCarrier {

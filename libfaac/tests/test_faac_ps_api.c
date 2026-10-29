@@ -84,9 +84,8 @@ int main(void)
             assert(faac_encoder_open(&p, &enc) == FAAC_OK);
             assert(faac_encoder_get_info(enc, &info) == FAAC_OK);
 #if FAAC_ENCODER_PS
-            enum faac_object_type expected = j == 0   ? FAAC_OBJ_LC
-                                             : j == 3 ? FAAC_OBJ_HE_AAC_V1
-                                                      : FAAC_OBJ_HE_AAC_V2;
+            enum faac_object_type expected = j == 3 ? FAAC_OBJ_HE_AAC_V1
+                                                     : FAAC_OBJ_HE_AAC_V2;
 #else
             enum faac_object_type expected = (bits[j] < 8000 || !(lib.flags & FAAC_LIB_SBR))
                                              ? FAAC_OBJ_LC : FAAC_OBJ_HE_AAC_V1;

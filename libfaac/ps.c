@@ -53,7 +53,7 @@ static int put_huff(BitStream *bs, const PsHuffPackedEntry *table, int nsyms, in
 
 /* The low three QMF bands need finer stereo resolution (ISO/IEC 14496-3 8.6.4.3).
  * Six slots of look-ahead centre the 13-tap bank. */
-void PsHybridAnalyze(PsHybrid *state, const float in[2][3][44][2], float energy[2][4][64],
+void PsHybridAnalyze(PsHybrid *state, float in[2][3][44][2], float energy[2][4][64],
                      float cross[4][64], float crossImag[4][64], int slots)
 {
     static const float g8[7] = {.00746082949812f,
@@ -135,7 +135,7 @@ typedef struct {
     int enable_icc, enable_phase;
 } PsFrameParams;
 
-static void ps_analyze_frame(const float energy[2][64], const float crossReal[64],
+static void ps_analyze_frame(float energy[2][64], const float crossReal[64],
                              const float crossImag[64], PsFrameParams *fd, int bands, int phases)
 {
     float l = 0, r = 0, cross = 0;
