@@ -21,7 +21,7 @@ option('frontend-static',
 
 # Decoder tuning
 option('decoder-sbr',
-    description: 'Enable SBR (HE-AAC v1) support in libfaad',
+    description: 'Enable Spectral Band Replication (HE-AAC v1) support in libfaad',
     type: 'boolean',
     value: true)
 
@@ -57,7 +57,7 @@ option('muxer-fragmented',
     value: true)
 
 option('encoder-sbr',
-    description: 'Enable HE-AAC v1 (SBR) support in libfaac',
+    description: 'Enable Spectral Band Replication (HE-AAC v1) support in libfaac',
     type: 'boolean',
     value: true)
 
@@ -76,7 +76,7 @@ option('encoder-ps',
 #   4: every 4th   -- ~26% faster HE-AAC encode; MOS d: -0.010
 #   8: every 8th   -- ~30% faster HE-AAC encode; MOS d: -0.038
 option('sbr-decimation',
-    description: 'Encoder SBR spectral analysis density: analyse every Nth slot (1=full quality, max=8)',
+    description: 'Encoder Spectral Band Replication analysis density: analyse every Nth slot (1=full quality, max=8)',
     type: 'integer',
     min: 1,
     max: 8,

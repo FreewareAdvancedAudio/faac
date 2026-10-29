@@ -54,10 +54,10 @@ meson install -C build
 | `decoder-dab` | true | Digital Audio Broadcasting (960/120 frame length) support in `libfaad` |
 | `decoder-drc` | true | Dynamic range control support in `libfaad` |
 | `decoder-ps` | true | Parametric Stereo (HE-AAC v2) support in `libfaad`; needs `decoder-sbr` |
-| `decoder-sbr` | true | SBR (HE-AAC v1) support in `libfaad` |
+| `decoder-sbr` | true | Spectral Band Replication (HE-AAC v1) support in `libfaad` |
 | `encoder` | true | Build `libfaac` and the `faac` frontend |
 | `encoder-ps` | false | Enable HE-AAC v2 Parametric Stereo encoding; needs `encoder-sbr` |
-| `encoder-sbr` | true | HE-AAC v1 (SBR) support in `libfaac`; false builds an LC-only encoder |
+| `encoder-sbr` | true | Spectral Band Replication (HE-AAC v1) support in `libfaac`; false builds an LC-only encoder |
 | `frontend` | true | Build the command-line tools |
 | `frontend-static` | false | Link the frontend executables to the static libraries |
 | `max-channels` | 8 | Maximum number of channels (1-8) |
@@ -66,7 +66,7 @@ meson install -C build
 | `muxer-video` | true | `libfaam`: H.264/H.265 video tracks |
 | `resampler` | true | Build the `faar` command-line tool (`libfaar` is always built) |
 | `resampler-float` | false | Use the float-only resampler engine for FPU-less targets; the default mixed build uses double at High quality |
-| `sbr-decimation` | 1 | Encoder SBR analysis density (1 = full quality, up to 8 = faster) |
+| `sbr-decimation` | 1 | Encoder Spectral Band Replication analysis density (1 = full quality, up to 8 = faster) |
 | `stats` | false | End-of-stream diagnostics on stderr (instrumentation only) |
 
 ## Library APIs
