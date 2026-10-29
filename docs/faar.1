@@ -1,12 +1,15 @@
 .TH FAAR 1 "2026-10-22" "3.0.0" "Freeware Advanced Audio Resampler"
+
 .SH NAME
-faar \- Freeware Advanced Audio Resampler
+faar \- open source sample rate converter for WAV and raw PCM audio
+
 .SH SYNOPSIS
 .B faar
 [\fIoptions\fR] \fIinput\fR [\fIoutput\fR]
 .br
 .B faar
 [\fIoptions\fR] \fB\-o\fR \fIdir\fR \fIinput\fR...
+
 .SH DESCRIPTION
 .B faar
 resamples WAV or raw PCM audio. WAV input is detected from its header; raw PCM input uses the rate, channel count, and format options below. A named output file is WAV when the input is WAV or the output name ends in .wav (case-insensitive). Output to stdout is raw PCM. Status and progress are written to stderr, so stdout can carry audio data. Existing output files are not replaced unless \fB--overwrite\fR is given; input and output paths that refer to the same file are always rejected.
@@ -19,31 +22,17 @@ for detailed descriptions. The long form
 .B --help
 is an alias for
 .BR -h .
-.SH OPTIONS
-.TP
-.BR \-r ", " \-\-rate " " \fIHz\fR
-Set target output sampling rate in Hz. Required. The accepted range is 7350 through 192000 Hz, or up to 384000 Hz with \fB--allow-extreme-rates\fR. A rate pair must also be supported by the library.
+
+.SH INPUT AND OUTPUT OPTIONS
 .TP
 .BR \-R ", " \-\-in-rate " " \fIHz\fR
 Set the raw PCM input rate [default: 44100 Hz]. WAV input uses its header rate.
-.TP
-.BR \-\-quality " " \fIpreset\fR
-Set filter quality preset: fast uses less processing with a narrower passband and weaker alias rejection; good (default) provides a wide passband and strong alias suppression; high keeps Good's passband while further reducing aliasing, at greater CPU and setup-memory cost. The default build runs High's filter kernels in native double. Float builds (resampler-float) support High with compensated float arithmetic, which uses more CPU; filter coefficients and FFT twiddles are still prepared with the existing double-precision calculations.
 .TP
 .BR \-c ", " \-\-channels " " \fInum\fR
 Set audio channel count for raw PCM input [default: 2; range: 1 to 8, subject to the configured build limit]. WAV input uses its header channel count.
 .TP
 .BR \-f ", " \-\-format " " \fIfmt\fR
 Set sample format for raw PCM input and for output: \fBf32le\fR (default), \fBs16le\fR, or \fBs24le\fR. WAV input format comes from its header.
-.TP
-.BR \-d ", " \-\-dither " " \fItype\fR
-Set dithering mode for integer format output: \fBnone\fR (default), \fBtpdf\fR (triangular dither), or \fBshaped\fR (TPDF dither with high-pass noise shaping).
-.TP
-.B \-D[<factor>], \-\-decimate[=<factor>]
-Force a multi-stage filter for downsampling. The optional factor defaults to 2 and must be attached to the option, as in \fB-D4\fR or \fB--decimate=4\fR. Large downsampling ratios may select multiple stages automatically.
-.TP
-.BR \-\-allow-extreme-rates
-Allow output rates above 192000 Hz, up to 384000 Hz.
 .TP
 .BR \-I ", " \-\-ignorelength
 Ignore the WAV data length in the input header and read until end-of-file.
@@ -54,14 +43,33 @@ Treat input as raw PCM instead of detecting WAV. This is required for raw PCM pi
 .BR \-o ", " \-\-output " " \fIpath\fR
 Specify output file path (use \fB\-\fR for stdout). When the path is an existing directory, every positional argument is an input and each result is written there under the input's file name; inputs with the same sample rate and channel count share one filter design.
 .TP
+.BR \-\-overwrite
+Replace an existing output file. Input and output paths that refer to the same file are still rejected.
+
+.SH RESAMPLING OPTIONS
+.TP
+.BR \-r ", " \-\-rate " " \fIHz\fR
+Set target output sampling rate in Hz. Required. The accepted range is 7350 through 192000 Hz, or up to 384000 Hz with \fB--allow-extreme-rates\fR. A rate pair must also be supported by the library.
+.TP
+.BR \-\-quality " " \fIpreset\fR
+Set filter quality preset: fast uses less processing with a narrower passband and weaker alias rejection; good (default) provides a wide passband and strong alias suppression; high keeps Good's passband while further reducing aliasing, at greater CPU and setup-memory cost. The default build runs High's filter kernels in native double. Float builds (resampler-float) support High with compensated float arithmetic, which uses more CPU; filter coefficients and FFT twiddles are still prepared with the existing double-precision calculations.
+.TP
+.BR \-d ", " \-\-dither " " \fItype\fR
+Set dithering mode for integer format output: \fBnone\fR (default), \fBtpdf\fR (triangular dither), or \fBshaped\fR (TPDF dither with high-pass noise shaping).
+.TP
+.B \-D[<factor>], \-\-decimate[=<factor>]
+Force a multi-stage filter for downsampling. The optional factor defaults to 2 and must be attached to the option, as in \fB-D4\fR or \fB--decimate=4\fR. Large downsampling ratios may select multiple stages automatically.
+.TP
+.BR \-\-allow-extreme-rates
+Allow output rates above 192000 Hz, up to 384000 Hz.
+
+.SH INFORMATION AND GENERAL OPTIONS
+.TP
 .BR \-v " " \fIlevel\fR
 Set status verbosity: 0 suppresses informational output, 1 (default) shows progress, and 2 shows progress with a completion summary. Errors are always written to stderr.
 .TP
 .BR \-q ", " \-\-quiet
 Suppress progress and informational output. Errors are still shown.
-.TP
-.BR \-\-overwrite
-Replace an existing output file. Input and output paths that refer to the same file are still rejected.
 .TP
 .BR \-h ", " \-\-help
 Display the short option summary and exit. Use \fB-H\fR for detailed help.
@@ -71,26 +79,54 @@ Display detailed descriptions of all options and examples, then exit.
 .TP
 .BR \-\-license
 Display copyright and license information.
+
 .SH EXAMPLES
-.TP
 Resample a 96 kHz WAV file to 48 kHz WAV:
+.IP
 .B faar -r 48000 input_96k.wav output_48k.wav
-.TP
+.PP
 Resample with High Quality and TPDF dithering to 16-bit WAV in quiet mode:
+.IP
 .B faar -r 48000 --quality high -d tpdf -f s16le -v0 input.wav output.wav
-.TP
+.PP
 Resample several files into a directory:
+.IP
 .B faar -r 48000 -o converted/ a.wav b.wav c.wav
-.TP
+.PP
 Stream raw float PCM through a shell pipeline:
+.IP
 .B cat input.raw | faar --raw -r 48000 -c 2 -f f32le - - | aplay -f FLOAT_LE -r 48000 -c 2
+
 .SH EXIT STATUS
 .B 0
 on success; nonzero on invalid options, unreadable input, resampler setup failure, or output error.
+
 .SH SEE ALSO
 .BR faac (1),
 .BR faad (1),
 .BR faam (1)
 .PP
+.BR faac (1)
+is the AAC encoder.
+It is built and installed unless the
+.B encoder
+build option is disabled.
+.PP
+.BR faad (1)
+is the AAC decoder.
+It is built and installed unless the
+.B decoder
+build option is disabled.
+.PP
+.BR faam (1)
+is the MP4 muxer and tag tool.
+It is built and installed unless the
+.B muxer
+build option is disabled.
+.PP
 The library API is described in
 .IR docs/libfaar.md .
+
+.SH AUTHORS
+.B FAAR
+is developed and maintained by Nils Schimmelmann.

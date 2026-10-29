@@ -7,7 +7,6 @@
 - [Building and linking](#building-and-linking)
 - [Supported streams](#supported-streams)
 - [API (faac.h)](#api-faach)
-
   - [Calling sequence](#calling-sequence)
   - [Error handling](#error-handling)
   - [Function reference](#function-reference)
@@ -19,7 +18,6 @@
   - [Encoder delay and gapless output](#encoder-delay-and-gapless-output)
   - [Rate control modes](#rate-control-modes)
   - [Capping the peak frame size](#capping-the-peak-frame-size)
-
 - [Porting from the legacy faacEnc* API](#porting-from-the-legacy-faacenc-api)
 - [Porting from libfaac ABI 1](#porting-from-libfaac-abi-1)
 - [Porting from libfaac ABI 2 to ABI 3](#porting-from-libfaac-abi-2-to-abi-3)
