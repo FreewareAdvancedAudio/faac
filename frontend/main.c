@@ -309,15 +309,15 @@ static void cli_session_start_callback(const encode_session_info_t *info, void *
     const char *jm_str = "";
     switch (opts->joint_mode)
     {
-    case FAAC_JOINT_MS: jm_str = " + M/S"; break;
-    case FAAC_JOINT_IS: jm_str = " + IS"; break;
-    case FAAC_JOINT_MIXED: jm_str = " + Mixed"; break;
+    case FAAC_STEREO_MS: jm_str = " + M/S"; break;
+    case FAAC_STEREO_IS: jm_str = " + IS"; break;
+    case FAAC_STEREO_AUTO: jm_str = " + Mixed"; break;
     default: break;
     }
 
     fprintf(stderr, "Object type: %s (MPEG-%d)%s%s%s\n",
             (info->object_type == FAAC_OBJ_HE_AAC_V2) ? "HE-AAC v2 (Parametric Stereo)" : (info->object_type == FAAC_OBJ_HE_AAC_V1) ? "HE-AAC v1" : "Low Complexity",
-            (info->mpeg_version == FAAC_MPEG4) ? 4 : 2,
+            info->mpeg_version,
             opts->use_tns ? " + TNS" : "",
             jm_str,
             info->use_pns ? " + PNS" : "");
@@ -635,14 +635,14 @@ int main(int argc, char *argv[])
         case MPEGVERS_FLAG:
             switch (atoi(optarg))
             {
-            case 2: opts.mpeg_version = FAAC_MPEG2; break;
-            case 4: opts.mpeg_version = FAAC_MPEG4; break;
+            case 2: opts.mpeg_version = 2; break;
+            case 4: opts.mpeg_version = 4; break;
             default: dieMessage = "Unrecognised MPEG version!\n"; break;
             }
             break;
         case OBJTYPE_FLAG:
             if (!strcmp(optarg, "lc"))
-                opts.object_type = FAAC_OBJ_LOW;
+                opts.object_type = FAAC_OBJ_LC;
             else if (!strcmp(optarg, "he-aac-v1"))
                 opts.object_type = FAAC_OBJ_HE_AAC_V1;
             else if (!strcmp(optarg, "he-aac-v2"))
@@ -656,7 +656,7 @@ int main(int argc, char *argv[])
             opts.shortctl = (enum faac_shortctl_mode)atoi(optarg);
             break;
         case OPT_JOINT:
-            opts.joint_mode = (enum faac_joint_mode)atoi(optarg);
+            opts.joint_mode = (enum faac_stereo_mode)atoi(optarg);
             break;
         case TAG_FLAG:
             {
@@ -787,7 +787,7 @@ int main(int argc, char *argv[])
 
     if (opts.container_mp4)
     {
-        opts.mpeg_version = FAAC_MPEG4;
+        opts.mpeg_version = 4;
     }
 
     bool has_metadata = opts.metadata.artist || opts.metadata.artist_sort ||
