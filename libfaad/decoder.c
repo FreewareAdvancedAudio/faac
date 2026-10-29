@@ -109,12 +109,18 @@ static uint32_t downmix_pcm(enum faad_downmix_mode mode, const float *src[], uin
     const float k = 0.70710678f;
     float gain = 1.0f / (1.0f + (c >= 0 ? k : 0.0f) + (ls >= 0 ? (ls == rs ? 0.5f * k : k) : 0.0f)
                                + (num_chs == 8 ? k : 0.0f));
+#if MAX_CHANNELS >= 3
     float lsw = (ls == rs) ? 0.5f * k : k; /* a single rear channel feeds both sides */
+#endif
     for (uint32_t i = 0; i < frame_samples; i++) {
         float lo = src[0][i], ro = src[1][i];
+#if MAX_CHANNELS >= 3
         if (c >= 0) { lo += k * src[c][i]; ro += k * src[c][i]; }
         if (ls >= 0) { lo += lsw * src[ls][i]; ro += lsw * src[rs][i]; }
+#endif
+#if MAX_CHANNELS >= 8
         if (num_chs == 8) { lo += k * src[6][i]; ro += k * src[7][i]; }
+#endif
         if (num_chs > 2) { lo *= gain; ro *= gain; }
         if (mode == FAAD_DOWNMIX_MONO) {
             dst[0][i] = 0.5f * (lo + ro);
@@ -992,6 +998,10 @@ FAADAPI faad_status faad_decode_frame(faad_decoder *decoder,
                 apply_tns(ics, decoder->spec[elem_ch]);
                 ch_idx += 1;
             } else if (syntax_id == ID_CPE) {
+#if MAX_CHANNELS < 2
+                decode_success = false; /* a pair cannot fit in the channel ceiling */
+                break;
+#else
                 uint32_t elem_ch = decoder->asc.pce.wave71
                     ? pce_channel(&decoder->asc.pce, syntax_id, bits_show(&bs, 4)) : ch_idx;
                 if (elem_ch + 1 >= MAX_CHANNELS
@@ -1038,6 +1048,7 @@ FAADAPI faad_status faad_decode_frame(faad_decoder *decoder,
                 apply_tns(&cpe->ics[1], decoder->spec[elem_ch + 1]);
 
                 ch_idx += 2;
+#endif
             } else if (syntax_id == ID_CCE) {
 #if MAX_CHANNELS >= 3
                 faad_status st = decode_cce(&bs, decoder);
