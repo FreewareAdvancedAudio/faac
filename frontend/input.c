@@ -202,8 +202,9 @@ static int seekchunk(FILE *f, riffsub_t *chunk, const char *name, rf64_sizes *si
     return 0;
 }
 
-pcmfile_t *wav_open_read(const char *name, bool rawinput)
+pcmfile_t *wav_open_read_ex(const char *name, bool rawinput, wav_open_error_t *err)
 {
+  wav_open_error_t why = WAV_OPEN_NOT_WAV;
   FILE *wave_f;
   riff_t riff;
   riffsub_t riffsub = {0};
@@ -215,7 +216,11 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
 
   if (!strcmp(name, "-"))
   {
-    if (!cli_binary_stream(stdin)) return NULL;
+    if (!cli_binary_stream(stdin))
+    {
+      if (err) *err = WAV_OPEN_IO;
+      return NULL;
+    }
     wave_f = stdin;
     dostdin = 1;
   }
@@ -225,6 +230,7 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
     if (!wave_f)
     {
       perror(name);
+      if (err) *err = WAV_OPEN_IO;
       return NULL;
     }
   }
@@ -236,6 +242,7 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
       goto bad;
     sizes.enabled = !memcmp(&(riff.label), "RF64", 4);
     if (!sizes.enabled && memcmp(&(riff.label), "RIFF", 4)) goto bad;
+    why = WAV_OPEN_MALFORMED;
     if (sizes.enabled && le32toh(riff.length) != UINT32_MAX) goto bad;
     if (memcmp(&(riff.chunk_type), "WAVE", 4))
       goto bad;
@@ -264,12 +271,16 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
       goto bad;
 
     uint16_t tag = le16toh(wave.Format.wFormatTag);
+    why = WAV_OPEN_UNSUPPORTED;
     if (tag != WAVE_FORMAT_PCM && tag != WAVE_FORMAT_FLOAT)
     {
       if (tag == WAVE_FORMAT_EXTENSIBLE)
       {
         if (le16toh(wave.Format.cbSize) < 22) // struct too small
+        {
+          why = WAV_OPEN_MALFORMED;
           goto bad;
+        }
         if (memcmp(wave.SubFormat, waveformat_pcm_guid, 16) != 0 &&
             memcmp(wave.SubFormat, waveformat_float_guid, 16) != 0)
         {
@@ -291,6 +302,7 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
   if (!sndf)
   {
       if (wave_f != stdin) fclose(wave_f);
+      if (err) *err = WAV_OPEN_IO;
       return NULL;
   }
   memset(sndf, 0, sizeof(*sndf));
@@ -333,10 +345,11 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
     {
       if (wave_f != stdin) fclose(wave_f);
       free(sndf);
+      if (err) *err = WAV_OPEN_UNSUPPORTED;
       return NULL;
     }
 
-    if (riffsub.len > INT64_MAX) { free(sndf); goto bad; }
+    if (riffsub.len > INT64_MAX) { free(sndf); why = WAV_OPEN_MALFORMED; goto bad; }
     sndf->bounded_data = sizes.enabled || riffsub.len != UINT32_MAX;
     sndf->data_remaining = riffsub.len;
     sndf->samples = sndf->bounded_data
@@ -348,7 +361,13 @@ pcmfile_t *wav_open_read(const char *name, bool rawinput)
 bad:
   free(sizes.entries);
   if (wave_f != stdin) fclose(wave_f);
+  if (err) *err = why;
   return NULL;
+}
+
+pcmfile_t *wav_open_read(const char *name, bool rawinput)
+{
+  return wav_open_read_ex(name, rawinput, NULL);
 }
 
 int *mk_chan_map(uint16_t channels, uint16_t center, uint16_t lf)

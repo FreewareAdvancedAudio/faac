@@ -168,6 +168,34 @@ def main():
         assert quiet_result.returncode == 0, quiet_result.stderr.decode(errors="replace")
         assert quiet_result.stderr == b""
 
+        # A WAV the parser recognizes but cannot read is an error, never raw PCM.
+        wav64 = os.path.join(directory, "float64.wav")
+        pcm64 = struct.pack("<64d", *[0.25] * 64)
+        with open(wav64, "wb") as stream:
+            stream.write(b"RIFF" + struct.pack("<I", 36 + len(pcm64)) + b"WAVE")
+            stream.write(b"fmt " + struct.pack("<IHHIIHH", 16, 3, 1, 96000, 96000 * 8, 8, 64))
+            stream.write(b"data" + struct.pack("<I", len(pcm64)) + pcm64)
+        wav64_out = os.path.join(directory, "float64-out.wav")
+        wav64_result = run(faar, "--rate", "44100", wav64, wav64_out)
+        assert wav64_result.returncode != 0 and b"unsupported WAV format" in wav64_result.stderr
+        assert not os.path.exists(wav64_out)
+        wav64_stdin = subprocess.run([faar, "--rate", "44100", "-", "-"],
+                                     input=open(wav64, "rb").read(),
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert wav64_stdin.returncode != 0 and wav64_stdin.stdout == b""
+
+        # Detection consumes stdin, so headerless stdin needs --raw.
+        no_header = subprocess.run([faar, "--rate", "48000", "--in-rate", "96000",
+                                    "--channels", "1", "--format", "f32le", "-", "-"],
+                                   input=raw_data, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert no_header.returncode != 0 and b"--raw" in no_header.stderr
+
+        # --raw forces raw interpretation even for a file that has a WAV header.
+        forced_out = os.path.join(directory, "forced.f32")
+        forced = run(faar, "--raw", "--rate", "48000", "--in-rate", "96000",
+                     "--channels", "1", "--format", "f32le", wav64, forced_out)
+        assert forced.returncode == 0, forced.stderr.decode(errors="replace")
+
         # Refuse aliases before opening the destination, preserving the input.
         original = open(source, "rb").read()
         same_path = run(faar, "--rate", "44100", source, source)

@@ -39,7 +39,18 @@ typedef struct
   bool isfloat;
 } pcmfile_t;
 
+/* Why wav_open_read_ex() failed. NOT_WAV means the header is not RIFF/RF64,
+   so the caller may still treat the file as headerless PCM. */
+typedef enum
+{
+  WAV_OPEN_NOT_WAV,
+  WAV_OPEN_UNSUPPORTED,
+  WAV_OPEN_MALFORMED,
+  WAV_OPEN_IO
+} wav_open_error_t;
+
 pcmfile_t *wav_open_read(const char *path, bool rawchans);
+pcmfile_t *wav_open_read_ex(const char *path, bool rawchans, wav_open_error_t *err);
 size_t wav_read_float32(pcmfile_t *sndf, float *buf, size_t num, int *map);
 int wav_close(pcmfile_t *file);
 

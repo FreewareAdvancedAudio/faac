@@ -53,7 +53,7 @@ static const help_t core_help[] = {
     {"-I, --ignorelength", "Read WAV audio to EOF, ignoring its data length",
      "Use this when the WAV data chunk length is missing or incorrect. This changes how the WAV data chunk is read; it does not change raw PCM handling."},
     {"--raw", "Read the input as raw PCM",
-     "Disables WAV detection and interprets the input using --in-rate, --channels, and --format. Use this for raw PCM on stdin so format detection does not consume stream data."},
+     "Disables WAV detection and interprets the input using --in-rate, --channels, and --format. Required for raw PCM on stdin, because format detection consumes the start of the stream."},
     {"-v <level>", "Verbosity: 0 quiet, 1 progress, 2 with summary",
      "Level 0 suppresses progress and informational messages. Level 1 (default) shows progress. Level 2 also prints the completed input and output frame counts. Errors are always shown."},
     {"-q, --quiet", "Suppress progress and informational messages",
@@ -65,7 +65,7 @@ static const help_t core_help[] = {
     {"-o, --output <path>", "Write output to a path or an existing directory; use - for stdout",
      "If omitted, output goes to stdout. Stdout contains raw PCM only; progress and messages are written to stderr. When the path is an existing directory, every positional argument is an input and each result is written there under the input's file name (batch mode)."},
     {"<input> [output]", "Read a WAV or raw PCM file; output defaults to stdout",
-     "Use - as the input path for stdin and as the output path for stdout. WAV input is detected from its header unless --raw is given. A named output is WAV when the input is WAV or its name ends in .wav (case-insensitive); otherwise it is raw PCM."},
+     "Use - as the input path for stdin and as the output path for stdout. WAV input is detected from its header unless --raw is given; a WAV header in an unsupported format is an error, not raw PCM. A named output is WAV when the input is WAV or its name ends in .wav (case-insensitive); otherwise it is raw PCM."},
     {"-h, --help", "Show short help and exit",
      "Prints the option summary and examples. Use -H for detailed descriptions of all options."},
     {"-H", "Show detailed help and exit",
@@ -156,8 +156,32 @@ static int convert_file(const job_t *job, const char *input_path,
         return 1;
     }
 
-    pcmfile_t *infile = force_raw_input ? NULL : wav_open_read(input_path, false);
+    wav_open_error_t wav_err = WAV_OPEN_NOT_WAV;
+    pcmfile_t *infile = force_raw_input ? NULL : wav_open_read_ex(input_path, false, &wav_err);
     bool is_wav_input = (infile != NULL);
+
+    if (!infile && !force_raw_input) {
+        /* Only a missing RIFF/RF64 header means headerless PCM. A recognized
+           WAV we cannot read must not be reinterpreted as raw samples, and
+           stdin has already lost its header bytes. */
+        if (wav_err == WAV_OPEN_UNSUPPORTED) {
+            fprintf(stderr, "Error: %s: unsupported WAV format (need 8/16/24/32-bit integer or 32-bit float PCM)\n",
+                    input_path);
+            return 1;
+        }
+        if (wav_err == WAV_OPEN_MALFORMED) {
+            fprintf(stderr, "Error: %s: malformed WAV file\n", input_path);
+            return 1;
+        }
+        if (wav_err == WAV_OPEN_IO) {
+            fprintf(stderr, "Error: Couldn't open input file %s\n", input_path);
+            return 1;
+        }
+        if (strcmp(input_path, "-") == 0) {
+            fprintf(stderr, "Error: standard input is not a WAV stream (use --raw for raw PCM)\n");
+            return 1;
+        }
+    }
 
     if (is_wav_input) {
         if (ignore_wav_length) infile->bounded_data = false;
