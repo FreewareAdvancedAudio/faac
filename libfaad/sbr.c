@@ -83,10 +83,16 @@ static void qmf_analysis_window(SBRChannel *ch, const float *in, float u[64])
             if (offset >= 320) offset -= 320;
             run[j] = ch->qmf_x + offset;
         }
+        /* Same tap order and zero start as a loop over j, without re-deriving pointers per output. */
+        const float *cb = qmf_win + 64 * half;
+        const float *r0 = run[0], *r1 = run[1], *r2 = run[2], *r3 = run[3], *r4 = run[4];
         for (int n = 0; n < 32; n++) {
             float acc = 0.0f;
-            for (int j = 0; j < 5; j++)
-                acc += run[j][n] * qmf_win[2 * (half * 32 + n + 64 * j)];
+            acc += r0[n] * cb[2 * n];
+            acc += r1[n] * cb[2 * n + 128];
+            acc += r2[n] * cb[2 * n + 256];
+            acc += r3[n] * cb[2 * n + 384];
+            acc += r4[n] * cb[2 * n + 512];
             u[half * 32 + n] = acc;
         }
     }
@@ -123,10 +129,27 @@ static void qmf_analysis_pair(SBRChannel *ch, const float *in, float out0[32][2]
     }
 }
 
-/* Separate restrict pointers so the tap loop vectorises. */
-static inline void mac64(float * restrict acc, const float * restrict x, const float * restrict c)
+/* One pass with the accumulator in a register, so each output is stored once. restrict sits on
+ * parameters because compilers honour it through inlining, keeping the loop vectorisable. */
+static inline void synth_window10(float * restrict out,
+                                  const float * restrict r0, const float * restrict r1, const float * restrict r2,
+                                  const float * restrict r3, const float * restrict r4, const float * restrict r5,
+                                  const float * restrict r6, const float * restrict r7, const float * restrict r8,
+                                  const float * restrict r9, const float * restrict w)
 {
-    for (int n = 0; n < 64; n++) acc[n] += x[n] * c[n];
+    for (int n = 0; n < 64; n++) {
+        float a = r0[n] * w[n];
+        a += r1[n] * w[64 + n];
+        a += r2[n] * w[128 + n];
+        a += r3[n] * w[192 + n];
+        a += r4[n] * w[256 + n];
+        a += r5[n] * w[320 + n];
+        a += r6[n] * w[384 + n];
+        a += r7[n] * w[448 + n];
+        a += r8[n] * w[512 + n];
+        a += r9[n] * w[576 + n];
+        out[n] = a;
+    }
 }
 
 /* 64-band synthesis of one slot: 64 output samples.
@@ -178,8 +201,7 @@ static void qmf_synthesis_slot(SBRChannel *ch, float X[64][2], float *out)
         run[2 * i]     = ch->qmf_v + pos0;
         run[2 * i + 1] = ch->qmf_v + pos1;
     }
-    for (int n = 0; n < 64; n++) out[n] = run[0][n] * qmf_win[n];
-    for (int i = 1; i < 10; i++) mac64(out, run[i], qmf_win + 64 * i);
+    synth_window10(out, run[0], run[1], run[2], run[3], run[4], run[5], run[6], run[7], run[8], run[9], qmf_win);
 }
 
 
