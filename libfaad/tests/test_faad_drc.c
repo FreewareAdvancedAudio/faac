@@ -206,7 +206,7 @@ static decoded decode(const bytes *stream, unsigned cut, unsigned boost, unsigne
     assert(faad_config_init(&cfg, sizeof(cfg)) == FAAD_OK);
     cfg.drc_cut = (uint8_t)cut;
     cfg.drc_boost = (uint8_t)boost;
-    cfg.drc_target_level = (uint8_t)target;
+    cfg.drc_target_level = target ? -0.25f * (float)target : 0.0f;
     cfg.output_format = floating ? FAAD_OUTPUT_FLOAT : FAAD_OUTPUT_16BIT;
     assert(faad_decoder_open(&cfg, NULL, 0, &dec) == FAAD_OK);
     faad_stream_info info = { .struct_size = sizeof(info) };
@@ -224,8 +224,8 @@ static decoded decode(const bytes *stream, unsigned cut, unsigned boost, unsigne
         frame_info *r = &out.frames[out.count++];
         r->flags = flags;
         r->short_window = dec->win_seq[0] == EIGHT_SHORT_SEQUENCE;
-        r->ref_present = (info.flags & FAAD_STREAM_PROG_REF_LEVEL) != 0;
-        r->ref_level = info.prog_ref_level;
+        r->ref_present = (info.flags & FAAD_STREAM_DRC_REF_LEVEL) != 0;
+        r->ref_level = (uint32_t)lroundf(-4.0f * info.drc_ref_level);
         r->offset = out.pcm.len;
         r->len = wrote;
         reserve(&out.pcm, wrote);

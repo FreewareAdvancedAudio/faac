@@ -115,3 +115,6 @@ option('fuzzing-engine',
     description: 'Link argument that supplies main() to the fuzz harnesses (empty replays corpus files instead)',
     type: 'string',
     value: '')
+
+option('encoder-drc', type: 'boolean', value: true,
+    description: 'Enable dynamic range control metadata generation in libfaac')

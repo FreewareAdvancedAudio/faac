@@ -23,6 +23,7 @@
  *
  * Build and run with tests/fuzz/run.sh.
  */
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,7 +72,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     lib.struct_size = sizeof(lib);
     if (faac_get_library_info(&lib) != FAAC_OK || lib.struct_size < sizeof(lib))
         abort();
-    if (lib.flags & ~(FAAC_LIB_SBR | FAAC_LIB_PS))
+    if (lib.flags & ~(FAAC_LIB_SBR | FAAC_LIB_PS | FAAC_LIB_DRC))
         abort();
 
     /* A truncated struct cannot describe the baseline layout and must be rejected. */
@@ -128,6 +129,20 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
 
     p.rate_control  = (enum faac_rate_control)(flags >> 17 & 7);
 
+    /* One selector byte sits between the header and the PCM chunks. Profiles 6
+     * and 7 and the out-of-range or NaN levels are rejected by a DRC build; a
+     * build without DRC rejects every nonzero profile as UNSUPPORTED and
+     * ignores the level. */
+    {
+        uint32_t d = take(&c, 1);
+        uint32_t lv = d >> 3;
+        p.drc_profile = (enum faac_drc_profile)(d & 7);
+        if (lv == 30)
+            p.drc_ref_level = NAN;
+        else if (lv < 30)
+            p.drc_ref_level = -31.75f + (float)lv * 1.1f;   /* tops out just over 0 */
+    }
+
     /* SONAME 2 use_lfe and channel_map folded into channel_layout. The old
      * flag bits select AAC, WAV, or an invalid layout for rejection coverage;
      * LFE itself is automatic for six and eight channels. */
@@ -142,6 +157,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         abort();
     }
     if (info.struct_size < sizeof(info) || info.max_output_bytes < 64) {
+        abort();
+    }
+    /* The resolved DRC state must echo what open() accepted; a build without
+     * DRC accepts only the off profile and reports no level. */
+    if (lib.flags & FAAC_LIB_DRC) {
+        if (info.drc_profile != p.drc_profile || info.drc_ref_level != p.drc_ref_level)
+            abort();
+    } else if (info.drc_profile != FAAC_DRC_OFF) {
         abort();
     }
 

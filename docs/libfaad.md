@@ -134,7 +134,7 @@ const char *faad_strerror(faad_status status);
 | `output_format` | `FAAD_OUTPUT_16BIT` | `16BIT`, `24BIT` (packed), `24IN32` or `FLOAT` |
 | `downmix_mode` | `FAAD_DOWNMIX_NONE` | `NONE` keeps the layout; `STEREO` or `MONO` downmix |
 | `drc_cut`, `drc_boost` | 0 | DRC strength 0-127; 0 is off. See [Dynamic range control](#dynamic-range-control) |
-| `drc_target_level` | 0 | 0 is off, else 40-127 in quarter-dB below full scale (96 is -24 dBFS) |
+| `drc_target_level` | 0.0 | 0.0 is off, else -31.75 to -10.0 dBFS, snapped to 0.25 dB. See [Dynamic range control](#dynamic-range-control) |
 
 ### Errors
 
@@ -356,8 +356,8 @@ change it later. Set `struct_size` once; the library writes back the populated s
 | `frame_samples` | Samples/channel per frame: 1024, or 960 for DAB+ streams, doubled (2048 or 1920) with upsampled SBR |
 | `max_output_bytes` | Lifetime PCM capacity, including implicit SBR/PS |
 | `channel_mask` | WAVE speaker mask; 0 for an unknown layout |
-| `flags` | `FAAD_STREAM_FORMAT_KNOWN`, `FAAD_STREAM_PROG_REF_LEVEL` |
-| `prog_ref_level` | Programme reference level, quarter-dB below full scale; valid only with `FAAD_STREAM_PROG_REF_LEVEL` |
+| `flags` | `FAAD_STREAM_FORMAT_KNOWN`, `FAAD_STREAM_DRC_REF_LEVEL` |
+| `drc_ref_level` | Program reference level in dBFS (-23.0 for a stream written with libfaac `drc_ref_level` -23); valid only with `FAAD_STREAM_DRC_REF_LEVEL` |
 
 The optional `frame_flags` output reports:
 
@@ -368,28 +368,30 @@ The optional `frame_flags` output reports:
 | `FAAD_FRAME_PS` | Parametric Stereo applied |
 | `FAAD_FRAME_CONCEALED` | Replacement audio for corrupt core data |
 | `FAAD_FRAME_DEGRADED` | Recovered audio, such as damaged SBR over an intact core |
-| `FAAD_FRAME_DRC` | Compression or normalisation was applied to this frame |
+| `FAAD_FRAME_DRC` | Compression or normalization was applied to this frame |
 | `FAAD_FRAME_DRC_INFO` | The frame carried DRC data, whether or not it was applied |
 
 Ignore unknown flag bits.
 
 ## Dynamic range control
 
-Some streams carry DRC metadata (`dynamic_range_info`) and a programme reference
+Some streams carry DRC metadata (`dynamic_range_info`) and a program reference
 level. DRC is off unless you set a field; it needs the `decoder-drc` build option
 (`FAAD_LIB_DRC`), otherwise the settings are accepted and ignored.
 
 - **`drc_cut`** and **`drc_boost`** scale how strongly the stream's gain control
   attenuates loud passages and boosts quiet ones. 0 disables each; 127 applies the
   full encoded gain.
-- **`drc_target_level`** normalises loudness: the decoder applies the gain that moves
-  the stream's programme reference level to the target, in quarter-dB steps. It does
+- **`drc_target_level`** normalizes loudness: the decoder applies the gain that moves
+  the stream's program reference level to the target. It does
   nothing for a stream without a reference level;
-  `faad_stream_info.flags & FAAD_STREAM_PROG_REF_LEVEL` says whether one exists, and
-  `prog_ref_level` holds it (quarter-dB below full scale).
+  `faad_stream_info.flags & FAAD_STREAM_DRC_REF_LEVEL` says whether one exists, and
+  `drc_ref_level` holds it in dBFS. Both use the scale of libfaac's `drc_ref_level`
+  (negative dBFS; LUFS for measured content), except that 0.0 turns the target off
+  here but is a valid reference level there.
 - Per frame, `FAAD_FRAME_DRC_INFO` says DRC data was present and `FAAD_FRAME_DRC` says
   something was applied.
-- Boost, and a target louder than the reference level (a smaller value), can raise
+- Boost, and a target above the reference level (a less negative value), can raise
   peaks. Integer output gets a
   soft limiter above about -1 dBFS; float output is left unclipped.
 
@@ -494,8 +496,8 @@ behaviors so such programs still work, but with libfaad3 the workarounds can go.
 | Legacy behavior | libfaad3 |
 |---|---|
 | The first decoded frame returned `samples == 0` | Every frame that produces PCM reports it; trim with `decoder_delay` and the container priming |
-| Streams with `dynamic_range_info` but no programme reference level came out 20 dB quieter (missing level treated as 0 dBFS) | No attenuation. `FAAD_STREAM_PROG_REF_LEVEL` says whether a level exists; `FAAD_FRAME_DRC_INFO` says the frame carried DRC data |
-| DRC and normalisation applied silently, unreadable and unchangeable | Off unless `drc_cut`, `drc_boost` or `drc_target_level` is set; `FAAD_FRAME_DRC` reports what was applied |
+| Streams with `dynamic_range_info` but no program reference level came out 20 dB quieter (missing level treated as 0 dBFS) | No attenuation. `FAAD_STREAM_DRC_REF_LEVEL` says whether a level exists; `FAAD_FRAME_DRC_INFO` says the frame carried DRC data |
+| DRC and normalization applied silently, unreadable and unchangeable | Off unless `drc_cut`, `drc_boost` or `drc_target_level` is set; `FAAD_FRAME_DRC` reports what was applied |
 | Bitstream channel order (C L R, side, back, LFE) with a position array | WAVE speaker order with `channel_mask` |
 | Output format and downmix settable any time; `Init` could report a wrong rate for implicit SBR at 24 kHz or below | Config is fixed at open. `faad_decoder_get_info()` gives the rate and channels actually emitted; `FAAD_FRAME_FORMAT_CHANGED` marks changes |
 | LC-only streams at 24 kHz or below were upsampled to twice the rate | Emitted at their real rate |

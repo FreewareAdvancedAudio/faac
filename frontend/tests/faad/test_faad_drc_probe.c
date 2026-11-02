@@ -35,7 +35,7 @@ int main(int argc, char **argv)
     faad_config_init(&cfg, sizeof cfg);
     cfg.drc_cut = atoi(argv[2]);
     cfg.drc_boost = atoi(argv[3]);
-    cfg.drc_target_level = atoi(argv[4]);
+    cfg.drc_target_level = atoi(argv[4]) ? -0.25f * (float)atoi(argv[4]) : 0.0f;
     cfg.output_format = atoi(argv[5]) ? FAAD_OUTPUT_FLOAT : FAAD_OUTPUT_16BIT;
     FILE *f = fopen(argv[1], "rb");
     if (!f) return 2;
@@ -76,14 +76,14 @@ int main(int argc, char **argv)
             if (pcm[info.max_output_bytes + i] != 0xa5) { free(pcm); faad_decoder_close(&dec); fclose(f); return 5; }
         faad_decoder_get_info(dec, &info);
         uint32_t record[] = { (uint32_t)status, used, wrote, flags,
-                             (info.flags & FAAD_STREAM_PROG_REF_LEVEL), info.prog_ref_level,
+                             (info.flags & FAAD_STREAM_DRC_REF_LEVEL), (uint32_t)(-4.0f * info.drc_ref_level + 0.5f),
                              dec->win_seq[0] == EIGHT_SHORT_SEQUENCE };
         fwrite(record, sizeof record, 1, stdout);
         fwrite(pcm, 1, wrote, stdout);
         if (++frame == (unsigned)atoi(argv[6])) {
             faad_decoder_flush(dec);
             faad_decoder_get_info(dec, &info);
-            if ((info.flags & FAAD_STREAM_PROG_REF_LEVEL)) { free(pcm); faad_decoder_close(&dec); fclose(f); return 4; }
+            if ((info.flags & FAAD_STREAM_DRC_REF_LEVEL)) { free(pcm); faad_decoder_close(&dec); fclose(f); return 4; }
         }
     }
     free(pcm);

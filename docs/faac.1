@@ -274,6 +274,13 @@ Use for an incorrect length; RF64 input does not require this option.
 .TP
 .BR --overwrite
 Overwrite existing output file
+.TP
+.BR --drc\ <\fIprofile\fP>
+Write dynamic range control metadata (ISO/IEC 14496-3 dynamic_range_info) so a decoder that applies it can compress the program. The profile is one of \fBoff\fP (default), \fBfilm\fP, \fBfilm-light\fP, \fBmusic\fP, \fBmusic-light\fP or \fBspeech\fP. The \fB-light\fP profiles use a wider null band around the reference level, so less of the program is changed. Gains follow a BS.1770 K-weighted loudness measured on the input. A decoder applies the metadata only when asked, for example with \fBfaad --drc-cut\fP, \fB--drc-boost\fP and \fB--drc-target-level\fP. Requires an encoder built with \fBencoder-drc=true\fP (the default).
+.TP
+.BR --drc-ref-level\ <\fILUFS\fP>
+Set the program reference level of the content in LUFS (range: -31.75 to 0.0; default: -23.0). The profile's null band is centered on it. Requires \fB--drc\fP.
+Use the content's actual loudness. A decoder that normalizes to a target level (\fBfaad --drc-target-level\fP) shifts the output by the target minus this level, so a loud master left at the default can clip.
 .SH MP4 SPECIFIC OPTIONS
 .TP
 .BR --tag\ <\fItagname=tagvalue\fP>

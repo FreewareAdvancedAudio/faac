@@ -18,6 +18,7 @@
 #include "endian.h"
 #undef NDEBUG
 #include <assert.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -241,16 +242,16 @@ static void test_raw_init(void)
 static void test_drc_config_validation(void)
 {
 #ifndef FAAD_DISABLE_DRC
-    const uint8_t invalid[][3] = {
-        { 128, 0, 0 }, { 0, 128, 0 }, { 0, 0, 1 },
-        { 0, 0, 39 }, { 0, 0, 128 }
+    const float invalid[][3] = {
+        { 128, 0, 0 }, { 0, 128, 0 }, { 0, 0, -0.25f },
+        { 0, 0, -9.75f }, { 0, 0, -32.0f }, { 0, 0, 5.0f }, { 0, 0, NAN }
     };
     faad_config cfg;
     faad_decoder *dec = NULL;
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         assert(faad_config_init(&cfg, sizeof(cfg)) == FAAD_OK);
-        cfg.drc_cut = invalid[i][0];
-        cfg.drc_boost = invalid[i][1];
+        cfg.drc_cut = (uint8_t)invalid[i][0];
+        cfg.drc_boost = (uint8_t)invalid[i][1];
         cfg.drc_target_level = invalid[i][2];
         assert(faad_decoder_open(&cfg, NULL, 0, &dec) == FAAD_ERR_INVALID_ARGUMENT);
         assert(!dec);
