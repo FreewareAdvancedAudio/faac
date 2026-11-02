@@ -13,7 +13,7 @@ faar \- open source sample rate converter for WAV and raw PCM audio
 
 .SH DESCRIPTION
 .B faar
-resamples WAV or raw PCM audio. WAV input is detected from its header; raw PCM input uses the rate, channel count, and format options below. A named output file is WAV when the input is WAV or the output name ends in .wav (case-insensitive). Output to stdout is raw PCM. Status and progress are written to stderr, so stdout can carry audio data. Existing output files are not replaced unless \fB--overwrite\fR is given; input and output paths that refer to the same file are always rejected.
+resamples WAV or raw PCM audio. WAV input is detected from its header, and a WAV file in an unsupported format is rejected rather than read as raw PCM; raw PCM input uses the rate, channel count, and format options below. A named output file is WAV when the input is WAV or the output name ends in .wav (case-insensitive). Output to stdout is raw PCM. Status and progress are written to stderr, so stdout can carry audio data. Existing output files are not replaced unless \fB--overwrite\fR is given; input and output paths that refer to the same file are always rejected.
 .PP
 Use
 .B -h
