@@ -83,10 +83,16 @@ static void qmf_analysis_window(SBRChannel *ch, const float *in, float u[64])
             if (offset >= 320) offset -= 320;
             run[j] = ch->qmf_x + offset;
         }
+        /* Same tap order and zero start as a loop over j, without re-deriving pointers per output. */
+        const float *cb = qmf_win + 64 * half;
+        const float *r0 = run[0], *r1 = run[1], *r2 = run[2], *r3 = run[3], *r4 = run[4];
         for (int n = 0; n < 32; n++) {
             float acc = 0.0f;
-            for (int j = 0; j < 5; j++)
-                acc += run[j][n] * qmf_win[2 * (half * 32 + n + 64 * j)];
+            acc += r0[n] * cb[2 * n];
+            acc += r1[n] * cb[2 * n + 128];
+            acc += r2[n] * cb[2 * n + 256];
+            acc += r3[n] * cb[2 * n + 384];
+            acc += r4[n] * cb[2 * n + 512];
             u[half * 32 + n] = acc;
         }
     }
