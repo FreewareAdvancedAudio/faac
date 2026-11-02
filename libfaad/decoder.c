@@ -382,8 +382,8 @@ static void apply_drc(faad_decoder *dec)
 static bool drc_output(faad_decoder *dec, const float *src[], uint32_t num_chs,
                        uint32_t frame_samples, void *out_pcm)
 {
-    float target_gain = dec->config.drc_target_level && dec->drc.ref_present
-        ? exp2f(((float)dec->drc.ref - dec->config.drc_target_level) / 24.0f) : 1.0f;
+    float target_gain = dec->config.drc_target_level != 0.0f && dec->drc.ref_present
+        ? exp2f(((float)dec->drc.ref + 4.0f * dec->config.drc_target_level) / 24.0f) : 1.0f;
     float previous_gain = dec->drc.previous_norm ? dec->drc.previous_norm : 1.0f;
     if (target_gain != 1.0f || previous_gain != 1.0f || (dec->drc.boost && dec->config.output_format != FAAD_OUTPUT_FLOAT)) {
         bool floating = dec->config.output_format == FAAD_OUTPUT_FLOAT;
@@ -433,8 +433,10 @@ static faad_status resolve_config(const faad_config *cfg, faad_config *resolved)
     COPY_CONFIG_FIELD(drc_boost);
     COPY_CONFIG_FIELD(drc_target_level);
     if (resolved->drc_cut > 127 || resolved->drc_boost > 127
-        || (resolved->drc_target_level && (resolved->drc_target_level < 40 || resolved->drc_target_level > 127)))
+        || (resolved->drc_target_level != 0.0f
+            && !(resolved->drc_target_level >= -31.75f && resolved->drc_target_level <= -10.0f)))
         return FAAD_ERR_INVALID_ARGUMENT;
+    resolved->drc_target_level = roundf(4.0f * resolved->drc_target_level) / 4.0f;
 #endif
 #undef COPY_CONFIG_FIELD
     return (resolved->stream_format == FAAD_STREAM_RAW || resolved->stream_format == FAAD_STREAM_ADTS)
@@ -705,8 +707,8 @@ FAADAPI faad_status faad_decoder_get_info(const faad_decoder *decoder, faad_stre
     info.max_output_bytes = decoder->max_output_bytes;
     if (decoder->format_known) info.flags |= FAAD_STREAM_FORMAT_KNOWN;
 #ifndef FAAD_DISABLE_DRC
-    info.prog_ref_level = decoder->drc.ref;
-    if (decoder->drc.ref_present) info.flags |= FAAD_STREAM_PROG_REF_LEVEL;
+    info.drc_ref_level = -0.25f * (float)decoder->drc.ref;
+    if (decoder->drc.ref_present) info.flags |= FAAD_STREAM_DRC_REF_LEVEL;
 #endif
     if (!(info.flags & FAAD_STREAM_FORMAT_KNOWN)) {
         memcpy(out_info, &info, info.struct_size);
@@ -1295,7 +1297,7 @@ FAADAPI faad_status faad_decode_frame(faad_decoder *decoder,
     if (required_bytes > decoder->max_output_bytes) return FAAD_ERR_DECODE_FAILED;
 
 #ifndef FAAD_DISABLE_DRC
-    if ((decoder->config.drc_target_level || decoder->drc.boost)
+    if ((decoder->config.drc_target_level != 0.0f || decoder->drc.boost)
         && drc_output(decoder, src, num_chs, frame_samples, out_pcm)) goto output_done;
 #endif
     if (decoder->config.output_format == FAAD_OUTPUT_16BIT) {

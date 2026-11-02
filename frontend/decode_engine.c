@@ -660,7 +660,8 @@ int run_decoding_session_ext(const decode_options_t *opts,
     uint32_t bit_depth = opts->bit_depth;
     bool is_float = opts->is_float;
     enum faad_downmix_mode downmix = opts->downmix;
-    uint8_t drc_cut = opts->drc_cut, drc_boost = opts->drc_boost, drc_target = opts->drc_target;
+    uint8_t drc_cut = opts->drc_cut, drc_boost = opts->drc_boost;
+    float drc_target = opts->drc_target;
     bool gapless = opts->gapless;
     bool info_only = opts->info_only;
     uint32_t want_track = opts->want_track;
@@ -939,7 +940,7 @@ int run_decoding_session_ext(const decode_options_t *opts,
             log_msgf(log_cb, user_data, 0, "Warning: this stream uses SBR, which this build lacks (needs -Ddecoder-sbr=true); decoding the core only, at half the sample rate\n");
         else if (obj_type == FAAD_OBJ_HE_AAC_V2 && !(dec_lib.flags & FAAD_LIB_PS))
             log_msgf(log_cb, user_data, 0, "Warning: this stream uses Parametric Stereo, which this build lacks (needs -Ddecoder-ps=true); decoding mono\n");
-        if ((drc_cut || drc_boost || drc_target) && !(dec_lib.flags & FAAD_LIB_DRC))
+        if ((drc_cut || drc_boost || drc_target != 0.0f) && !(dec_lib.flags & FAAD_LIB_DRC))
             log_msgf(log_cb, user_data, 0, "Warning: the DRC options have no effect, this build lacks dynamic range control (needs -Ddecoder-drc=true)\n");
     }
 
@@ -1175,6 +1176,16 @@ int run_decoding_session_ext(const decode_options_t *opts,
     uint32_t max_kbps = (uint32_t)(((uint64_t)max_frame_bytes * 8 * sample_rate / (1024 * 1000.0)) + 0.5);
     const char *brand = track.major_brand[0] ? track.major_brand : "M4A";
 
+    bool has_drc_ref = false;
+    float drc_ref = 0.0f;
+    if (dec) {
+        faad_stream_info end_info = { .struct_size = sizeof(end_info) };
+        if (faad_decoder_get_info(dec, &end_info) == FAAD_OK && (end_info.flags & FAAD_STREAM_DRC_REF_LEVEL)) {
+            has_drc_ref = true;
+            drc_ref = end_info.drc_ref_level;
+        }
+    }
+
     if (json_info) {
         printf("{\n");
         printf("  \"file\": ");
@@ -1191,7 +1202,8 @@ int run_decoding_session_ext(const decode_options_t *opts,
         printf("    \"channels\": %u,\n", num_channels);
         printf("    \"sample_rate_hz\": %u,\n", sample_rate);
         printf("    \"bitrate_avg_kbps\": %.1f,\n", avg_bitrate_kbps);
-        printf("    \"total_frames\": %" PRIu64 "\n", frames_decoded);
+        printf("    \"total_frames\": %" PRIu64 "%s\n", frames_decoded, has_drc_ref ? "," : "");
+        if (has_drc_ref) printf("    \"drc_ref_level_dbfs\": %.2f\n", drc_ref);
         printf("  },\n");
         printf("  \"gapless\": { \"encoder_delay\": %u, \"trailing_padding\": %u },\n", track.delay, track.padding);
         printf("  \"cover_art_bytes\": %u,\n", track.cover_bytes);
@@ -1226,6 +1238,7 @@ int run_decoding_session_ext(const decode_options_t *opts,
         printf("  Sample Rate: %.1f kHz\n", sample_rate / 1000.0f);
         printf("  Bitrate:   %.1f kbps (Avg)\n", avg_bitrate_kbps);
         printf("  Frames:    %" PRIu64 " frames\n", frames_decoded);
+        if (has_drc_ref) printf("  DRC Ref:   %.2f dBFS\n", drc_ref);
         if (track.delay || track.padding) {
             printf("\nGapless:\n");
             printf("  Encoder Delay:    %u samples\n", track.delay);

@@ -38,7 +38,7 @@ typedef struct {
     enum faad_downmix_mode downmix;
     uint8_t drc_cut;
     uint8_t drc_boost;
-    uint8_t drc_target;
+    float drc_target; /* dBFS, 0 off */
     bool gapless;
     uint32_t want_track;
     uint8_t verbose; /* 0: quiet, 1: progress, 2: detailed summary */

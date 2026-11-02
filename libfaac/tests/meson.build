@@ -41,6 +41,23 @@ test('test_unit_faac_ps_api',
         link_with: libfaac,
         c_args: c_args + [(cc.get_argument_syntax() == 'msvc') ? '/UNDEBUG' : '-UNDEBUG']))
 
+if encoder_drc
+    test_faac_drc = executable('test_faac_drc', 'test_faac_drc.c',
+        include_directories: ['..', '../..', '../../include'],
+        link_with: [libfaac],
+        dependencies: [libm],
+        c_args: c_args + [(cc.get_argument_syntax() == 'msvc') ? '/UNDEBUG' : '-UNDEBUG'])
+    # Encode tens of seconds of audio; ~80x slower under qemu-user.
+    foreach c : ['off_baseline_hash', 'auto_encoder_integration',
+                 'release_reaches_target', 'surround_weights_symmetric',
+                 'surround_weights_71', 'gain_aligned_with_audio',
+                 'profile_curves', 'pce_before_fil', 'zero_reference',
+                 'invalid_profile']
+        test('test_unit_faac_drc_' + c, test_faac_drc, args: [c],
+             timeout: c == 'profile_curves' ? 60 : 30)
+    endforeach
+endif
+
 test('test_unit_faac_info',
     executable('test_faac_info', 'test_faac_info.c',
         include_directories: ['..', '../..', '../../include'],

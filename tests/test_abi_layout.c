@@ -63,8 +63,8 @@ BASELINE(faam_library_info, FAAM_LIBRARY_INFO_BASELINE);
 
 /* Pointer-free structs: released baselines and offsets are identical on every target. */
 #define BASELINE_IS(B, N) _Static_assert((B) == (N), #B " changed")
-BASELINE_IS(FAAC_PARAMS_BASELINE, 60);
-BASELINE_IS(FAAC_ENCODER_INFO_BASELINE, 36);
+BASELINE_IS(FAAC_PARAMS_BASELINE, 68);
+BASELINE_IS(FAAC_ENCODER_INFO_BASELINE, 64);
 BASELINE_IS(FAAD_CONFIG_BASELINE, 16);
 BASELINE_IS(FAAD_STREAM_INFO_BASELINE, 36);
 BASELINE_IS(FAAR_CONFIG_BASELINE, 32);
@@ -72,6 +72,9 @@ BASELINE_IS(FAAR_RESAMPLER_INFO_BASELINE, 12);
 BASELINE_IS(FAAM_DEMUXER_CONFIG_BASELINE, 8);
 _Static_assert(offsetof(faac_params, sample_rate) == 4 && offsetof(faac_params, rate_control) == 56,
                "faac_params layout");
+_Static_assert(offsetof(faac_params, drc_profile) == 60, "faac_params DRC layout");
+_Static_assert(offsetof(faac_encoder_info, asc) == 40 && offsetof(faac_encoder_info, drc_profile) == 56,
+               "faac_encoder_info appends after asc");
 _Static_assert(offsetof(faad_config, downmix_mode) == 12, "faad_config layout");
 
 /* Pointer-free structs stay 4-byte aligned so a caller's smaller struct is never mis-aligned. */

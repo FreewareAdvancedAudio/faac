@@ -14,6 +14,14 @@ Unreleased
 	  carries the AudioSpecificConfig; float input is unity full scale;
 	  faac_library_info reports SBR and PS through flags. Each shared
 	  library now has its own ABI version, separate from the release
+	* Dynamic range control: faac --drc <profile> writes dynamic_range_info
+	  from the input's K-weighted loudness (profiles: film, film-light,
+	  music, music-light, speech; --drc-ref-level sets the program level);
+	  libfaac gains drc_profile and drc_ref_level and FAAC_LIB_DRC, off
+	  with -Dencoder-drc=false. faad takes --drc-cut and --drc-boost in
+	  percent and --drc-target-level in dBFS; libfaad uses dBFS for
+	  drc_target_level and drc_ref_level, and faad -i prints the stream's
+	  reference level
 	* Eight-channel streams are signalled with a program config element in
 	  the AudioSpecificConfig and in every 32nd ADTS frame; faad and faam
 	  read them

@@ -49,7 +49,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     if (mode & 0x10) {
         cfg.drc_cut = data[1] & 0x7f;
         cfg.drc_boost = data[2] & 0x7f;
-        cfg.drc_target_level = data[3];
+        cfg.drc_target_level = data[3] ? -0.25f * (float)data[3] : 0.0f;
     }
 
     faad_decoder *dec = NULL;
@@ -111,7 +111,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     info.struct_size = sizeof(info);
     if (faad_decoder_get_info(dec, &info) != FAAD_OK)
         abort();
-    if (info.flags & ~(FAAD_STREAM_FORMAT_KNOWN | FAAD_STREAM_PROG_REF_LEVEL))
+    if (info.flags & ~(FAAD_STREAM_FORMAT_KNOWN | FAAD_STREAM_DRC_REF_LEVEL))
         abort();
     if (decoded && !(info.flags & FAAD_STREAM_FORMAT_KNOWN))
         abort();

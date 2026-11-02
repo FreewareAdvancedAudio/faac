@@ -78,8 +78,14 @@ the include path, and define `FAAC_BUILDING` for a Windows DLL.
 | RAW | One access unit per frame; the MPEG-4 ASC is available separately |
 | MP4/M4A | Mux outside the library from RAW frames and the ASC |
 | MPEG-2 | `FAAC_STREAM_ADTS_MPEG2`: AAC-LC only, no ASC. Explicit HE-AAC resolves to MPEG-4 and reports `FAAC_STREAM_ADTS`. RAW is always MPEG-4 |
+| Dynamic Range Control | `dynamic_range_info` fill elements from a single-pass K-weighted level analysis, selected by `drc_profile` (film, film-light, music, music-light, speech) and `drc_ref_level`; requires `encoder-drc=true` (the default) |
 | Channels | 1-6 or 8, up to the compiled `max-channels`; 7 is unsupported |
 | PCM | Interleaved native-endian signed integer or float |
+
+The five DRC profiles use the standard line-mode curves, with gains in 0.25 dB
+steps and attack/release ballistics. The first access unit starts at 0 dB and
+releases into boost rather than jumping to the curve. A `drc_ref_level` of 0 LUFS
+is valid; `faac_params_init()` supplies -23.
 
 **Sample rates.** Use a standard AAC rate: 8000, 11025, 12000, 16000, 22050,
 24000, 32000, 44100, 48000, 64000, 88200 or 96000 Hz. Open accepts 7350-96000 Hz,
@@ -95,6 +101,8 @@ that the returned `struct_size` covers `flags` before reading it.
   to LC.
 - `FAAC_LIB_PS` is set only when PS and SBR are both built; otherwise
   `FAAC_OBJ_HE_AAC_V2` returns `FAAC_ERR_UNSUPPORTED`.
+- `FAAC_LIB_DRC` is clear with `-Dencoder-drc=false`. There, a nonzero
+  `drc_profile` returns `FAAC_ERR_UNSUPPORTED`.
 
 ## Using the API
 
@@ -165,6 +173,8 @@ passed unchanged (sample rate, rate control, peak rate) are not repeated.
 | `input_format` | `FAAC_INPUT_16BIT` | See [Defaults and PCM input](#defaults-and-pcm-input) |
 | `short_control` | `FAAC_SHORTCTL_NORMAL` | `NORMAL`, `NOSHORT` (long only) or `NOLONG` (short only) |
 | `channel_layout` | `FAAC_LAYOUT_AAC` | See [Channel order](#channel-order) |
+| `drc_profile` | `FAAC_DRC_OFF` | `FILM`, `FILM_LIGHT`, `MUSIC`, `MUSIC_LIGHT` or `SPEECH` write `dynamic_range_info`; any other nonzero value is `FAAC_ERR_INVALID_ARGUMENT`, and every nonzero value is `FAAC_ERR_UNSUPPORTED` when `FAAC_LIB_DRC` is clear. Decoders apply it only when asked (`faad --drc-cut`, `--drc-boost`, `--drc-target-level`) |
+| `drc_ref_level` | -23.0 | Program reference level in LUFS, -31.75 to 0.0; written as `prog_ref_level` in 0.25 dB steps. Set it to the content's actual loudness: a decoder that normalizes to a target level shifts the output by the target minus this value. Validated in DRC builds only |
 
 ### Resolved info
 
@@ -182,6 +192,7 @@ returns.
 | `quality` | Quantizer quality: your value in VBR; in ABR/CBR the starting point, derived from `bit_rate` (100 when you set `bandwidth` explicitly) |
 | `encoder_delay` | Priming in samples/channel; see [Gapless output](#gapless-output) |
 | `asc_size`, `asc[14]` | AudioSpecificConfig; `asc_size` is 0 for MPEG-2 ADTS |
+| `drc_profile`, `drc_ref_level` | The DRC settings in effect; zero in a build without `FAAC_LIB_DRC` |
 
 ### Object types
 
@@ -620,7 +631,7 @@ being the channel count. Multiply every `bit_rate` by `channels`.
 | `FAAC_RC_AUTO` as zero | Gone. `FAAC_RC_ABR` is 0 and the default, VBR 1, CBR 2. VBR needs `bit_rate = 0`; ABR and CBR need `quality = 0` (a `quality` with a bitrate used to seed the rate loop and is now refused); VBR needs an explicit `quality` of 1-5000: 0 (the old default) and values above 5000 are refused, not defaulted or clamped |
 | per-channel `bit_rate` | Whole-stream; multiply by `channels`. Zero means 64 kbit/s per channel. `info.bit_rate` is whole-stream and `peak_bit_rate` must be at least `bit_rate` |
 | more channels than `max-channels` | Open returns `FAAC_ERR_UNSUPPORTED` (it used to succeed) |
-| `faac_library_info` layout | Members are `struct_size`, `version`, `copyright`, `max_channels`, `sbr_decimation`, `flags`; recompile. `FAAC_LIB_SBR` and `FAAC_LIB_PS` say whether HE-AAC v1 and v2 are built |
+| `faac_library_info` layout | Members are `struct_size`, `version`, `copyright`, `max_channels`, `sbr_decimation`, `flags`; recompile. `FAAC_LIB_SBR`, `FAAC_LIB_PS` and `FAAC_LIB_DRC` say whether HE-AAC v1, v2 and DRC metadata are built |
 | `use_lfe`, `channel_map`, `channel_map_count` | `channel_layout`: `FAAC_LAYOUT_AAC` (default) or `_WAV`. Other orders are permuted by the caller. `faac.h` no longer includes `<stdbool.h>` |
 | `faac_encoder_info.sample_rate` | Removed; it always equalled `faac_params.sample_rate` (HE-AAC included). Use the value you passed |
 | `faac_encoder_info.bit_rate`, `.quant_quality` | `bit_rate` is whole-stream; `quant_quality` is now `quality` |

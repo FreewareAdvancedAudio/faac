@@ -85,7 +85,9 @@ enum flags
     OPT_FASTSTART,
     LANG_FLAG,
     RATE_FLAG,
-    STREAM_FORMAT_FLAG
+    STREAM_FORMAT_FLAG,
+    OPT_DRC,
+    OPT_DRC_REF_LEVEL
 };
 
 static const help_t help_qual[] = {
@@ -156,6 +158,11 @@ static const help_t help_io[] = {
     {"--overwrite",
      "Overwrite existing output file",
      NULL},
+    {"--drc <profile>",
+     "Write dynamic range control metadata: off (default), film, film-light, music, music-light or speech.",
+     "The -light profiles use a wider null band. Needs an encoder built with encoder-drc. Apply on decode with faad --drc-cut, --drc-boost and --drc-target-level."},
+    {"--drc-ref-level <LUFS>",
+     "Program reference level of the content in LUFS (default: -23.0; range: -31.75 to 0.0). Requires --drc. Set it to the content's actual loudness: decoders that normalize to a target shift the output by the target minus this level.", NULL},
     {NULL, NULL, NULL}
 };
 
@@ -395,6 +402,8 @@ int main(int argc, char *argv[])
     bool has_custom_tags = false;
     bool quality_given = false;
     bool bitrate_given = false;
+    bool drc_given = false;
+    bool drc_ref_level_given = false;
     const char *dieMessage = NULL;
     int ret = 0;
 
@@ -520,6 +529,8 @@ int main(int argc, char *argv[])
             {"no-encoder-info", 0, 0, OPT_NO_ENCODER_INFO},
             {"faststart", 0, 0, OPT_FASTSTART},
             {"rate", 1, 0, RATE_FLAG},
+            {"drc", required_argument, 0, OPT_DRC},
+            {"drc-ref-level", required_argument, 0, OPT_DRC_REF_LEVEL},
             {0, 0, 0, 0}
         };
 
@@ -795,6 +806,37 @@ int main(int argc, char *argv[])
                 opts.rate_auto = false;
             }
             break;
+        case OPT_DRC:
+            drc_given = true;
+            if (!strcmp(optarg, "off")) {
+                opts.drc_profile = FAAC_DRC_OFF;
+            } else if (!strcmp(optarg, "film")) {
+                opts.drc_profile = FAAC_DRC_FILM;
+            } else if (!strcmp(optarg, "film-light")) {
+                opts.drc_profile = FAAC_DRC_FILM_LIGHT;
+            } else if (!strcmp(optarg, "music")) {
+                opts.drc_profile = FAAC_DRC_MUSIC;
+            } else if (!strcmp(optarg, "music-light")) {
+                opts.drc_profile = FAAC_DRC_MUSIC_LIGHT;
+            } else if (!strcmp(optarg, "speech")) {
+                opts.drc_profile = FAAC_DRC_SPEECH;
+            } else {
+                fprintf(stderr, "Invalid --drc profile '%s' (choose off, film, film-light, music, music-light or speech)\n", optarg);
+                return 1;
+            }
+            break;
+        case OPT_DRC_REF_LEVEL:
+            drc_ref_level_given = true;
+            {
+                char *endptr = NULL;
+                float val = strtof(optarg, &endptr);
+                if (!optarg || *optarg == '\0' || *endptr != '\0' || val < -31.75f || val > 0.0f) {
+                    fprintf(stderr, "Invalid --drc-ref-level '%s' (expected LUFS value in range -31.75 to 0.0)\n", optarg);
+                    return 1;
+                }
+                opts.drc_ref_level = val;
+            }
+            break;
         case HELP_QUAL:
         case HELP_IO:
         case HELP_MP4:
@@ -826,6 +868,9 @@ int main(int argc, char *argv[])
     /* The last one would silently win; the user meant one mode. */
     if (!dieMessage && quality_given && bitrate_given)
         dieMessage = "-q and -b are exclusive; use --cap-rate to bound VBR.\n";
+
+    if (!dieMessage && drc_ref_level_given && !drc_given)
+        dieMessage = "--drc-ref-level requires --drc\n";
 
     if (dieMessage)
     {

@@ -7,6 +7,12 @@ import struct
 import sys
 
 
+# The byte after the 12-byte header picks drc_profile (low 3 bits) and the
+# level (high 5 bits; 31 keeps the default -23 LUFS).
+def drc(profile=0):
+    return bytes([(31 << 3) | profile])
+
+
 def main():
     corpus = Path(sys.argv[1])
     # Stereo 48 kHz, 16-bit PCM: correlated and antiphase material exercise
@@ -33,7 +39,7 @@ def main():
             for i in range(2048):
                 sample = int(8000 * math.sin(2 * math.pi * 1000 * (frame * 2048 + i) / 48000))
                 chunks.extend(struct.pack("<hh", sample, phase * sample))
-        target.write_bytes(header + chunks)
+        target.write_bytes(header + drc() + chunks)
 
     # Eight channels are the PCE layout: ADTS frames carry the PCE in the first
     # frame and the ASC carries it for raw streams.
@@ -49,7 +55,23 @@ def main():
             for i in range(1024 * 8):
                 sample = int(12000 * math.sin(2 * math.pi * 440 * (frame * 1024 + i) / 48000))
                 chunks.extend(struct.pack("<h", sample))
-        target.write_bytes(header + chunks)
+        target.write_bytes(header + drc() + chunks)
+
+    # One seed per DRC profile so the analyzer and the fill element are always
+    # replayed: stereo 48 kHz LC with a loud-then-quiet tone.
+    for profile in range(1, 6):
+        target = corpus / ("drc-%d" % profile)
+        if target.exists():
+            continue
+        header = struct.pack(">IBBHHH", (1 << 2) | (1 << 12) | (1 << 17), 8, 2, 0, 0, 100)
+        chunks = bytearray()
+        for frame in range(24):
+            amp = 20000 if frame < 12 else 500
+            chunks.extend(struct.pack(">H", 2048))
+            for i in range(1024):
+                sample = int(amp * math.sin(2 * math.pi * 997 * (frame * 1024 + i) / 48000))
+                chunks.extend(struct.pack("<hh", sample, sample))
+        target.write_bytes(header + drc(profile) + chunks)
 
 
 if __name__ == "__main__":

@@ -120,6 +120,14 @@ if get_option('encoder')
         include_directories: ['..', '../..', '../../include', common_inc],
         link_with: [libfaad, libfaac], dependencies: [libm])
     test('test_integration_faad_drc', test_faad_drc)
+
+    if encoder_drc and get_option('decoder-drc')
+        test_faad_drc_roundtrip = executable('test_faad_drc_roundtrip', 'test_faad_drc_roundtrip.c',
+            c_args: faad_c_args + test_static_args,
+            include_directories: ['..', '../..', '../../include', common_inc],
+            link_with: [libfaad, libfaac], dependencies: [libm])
+        test('test_integration_faad_drc_roundtrip', test_faad_drc_roundtrip, timeout: 120)
+    endif
 endif
 
 if get_option('decoder-sbr') and (default_lib == 'static' or default_lib == 'both')

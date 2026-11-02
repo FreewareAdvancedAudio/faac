@@ -100,7 +100,7 @@ enum faad_library_flag {
     FAAD_LIB_SBR = 1u << 0,
     FAAD_LIB_PS = 1u << 1,
     FAAD_LIB_DAB = 1u << 2,         /* Digital Audio Broadcasting: 960/120-sample frames */
-    FAAD_LIB_DRC = 1u << 3,         /* Dynamic range control is applied */
+    FAAD_LIB_DRC = 1u << 3,         /* Dynamic range control support is compiled in */
     FAAD_LIB_FLAG_MAX = 0x7fffffff
 };
 
@@ -170,12 +170,12 @@ typedef struct faad_config {
     enum faad_downmix_mode  downmix_mode;  /* channel downmixing strategy   */
     uint8_t                 drc_cut;          /* attenuation scale, 0..127 */
     uint8_t                 drc_boost;        /* boost scale, 0..127 */
-    uint8_t                 drc_target_level; /* 0 off, else 40..127 quarter-dB below FS */
+    float                   drc_target_level; /* 0.0 off, else -31.75..-10.0 dBFS, snapped to 0.25 dB */
 } faad_config;
 
 enum faad_stream_flag {
     FAAD_STREAM_FORMAT_KNOWN  = 1u << 0,
-    FAAD_STREAM_PROG_REF_LEVEL = 1u << 1, /* prog_ref_level carries a valid programme reference level */
+    FAAD_STREAM_DRC_REF_LEVEL = 1u << 1, /* drc_ref_level carries a valid program reference level */
     FAAD_STREAM_FLAG_MAX      = 0x7fffffff
 };
 
@@ -205,8 +205,8 @@ typedef struct faad_stream_info {
     uint32_t                max_output_bytes; /* Lifetime PCM capacity, including implicit SBR/PS */
     uint32_t                channel_mask;     /* WAVE speaker mask; 0 for unknown layout */
     uint32_t                flags;            /* FAAD_STREAM_* */
-    uint8_t                 prog_ref_level;   /* quarter-dB below full scale; valid only
-                                               * when flags has FAAD_STREAM_PROG_REF_LEVEL */
+    float                   drc_ref_level;    /* program reference level in dBFS (<= 0; the LUFS value faac wrote);
+                                               * valid only when flags has FAAD_STREAM_DRC_REF_LEVEL */
 } faad_stream_info;
 
 /* Offset just past the named field: the smallest struct size the library accepts. */
@@ -223,7 +223,7 @@ enum faad_frame_flag {
     FAAD_FRAME_PS             = 1u << 2, /* Parametric Stereo applied */
     FAAD_FRAME_CONCEALED      = 1u << 3, /* Replacement audio for corrupt core data */
     FAAD_FRAME_DEGRADED       = 1u << 4, /* Recovered audio, e.g. damaged SBR with intact core */
-    FAAD_FRAME_DRC            = 1u << 5, /* Compression or normalisation applied */
+    FAAD_FRAME_DRC            = 1u << 5, /* Compression or normalization applied */
     FAAD_FRAME_DRC_INFO       = 1u << 6, /* The frame carried dynamic_range_info, applied or not */
     FAAD_FRAME_FLAG_MAX       = 0x7fffffff
 };

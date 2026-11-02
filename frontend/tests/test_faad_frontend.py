@@ -287,15 +287,19 @@ def main():
                                    *options, drc_path], check=True, capture_output=True).stdout
         baseline = drc_pcm()
         enabled = sys.argv[6] == 'true'
-        assert (drc_pcm('--drc-cut', '127') != baseline) == enabled
-        assert (drc_pcm('--drc-target', '92') != baseline) == enabled
-        assert drc_pcm('--drc-boost', '127') == baseline
+        shown = subprocess.run([faad, '-i', drc_path], check=True, capture_output=True).stdout
+        assert (b'DRC Ref:   -31.00 dBFS' in shown) == enabled, shown
+        shown = subprocess.run([faad, '--json', drc_path], check=True, capture_output=True).stdout
+        assert (b'"drc_ref_level_dbfs": -31.00' in shown) == enabled, shown
+        assert (drc_pcm('--drc-cut', '100') != baseline) == enabled
+        assert (drc_pcm('--drc-target-level', '-23') != baseline) == enabled
+        assert drc_pcm('--drc-boost', '100') == baseline
         with open(drc_path, 'wb') as f:
             f.write(inject(open(os.path.join(d, 't.aac'), 'rb').read(), drc(sign=0)))
-        assert (drc_pcm('--drc-boost', '127') != baseline) == enabled
-        for option, values in (('--drc-cut', ('-1', '128', 'x')),
-                               ('--drc-boost', ('-1', '128', 'x')),
-                               ('--drc-target', ('1', '39', '128', 'x'))):
+        assert (drc_pcm('--drc-boost', '100') != baseline) == enabled
+        for option, values in (('--drc-cut', ('-1', '101', 'x')),
+                               ('--drc-boost', ('-1', '101', 'x')),
+                               ('--drc-target-level', ('-9', '-32', '5', 'x'))):
             for value in values:
                 result = subprocess.run([faad, '-q', '-w', option, value, drc_path], capture_output=True)
                 assert result.returncode == 1, (option, value, result.returncode)
@@ -467,7 +471,7 @@ def main():
             warned = subprocess.run([faad, "--overwrite", "-o", he_out, he],
                                     check=True, capture_output=True).stderr
             assert (b"-Ddecoder-sbr=true" in warned) == (not sbr), warned.decode(errors="replace")
-            drc = subprocess.run([faad, "--overwrite", "--drc-target", "96", "-o", he_out, he],
+            drc = subprocess.run([faad, "--overwrite", "--drc-target-level", "-24", "-o", he_out, he],
                                  check=True, capture_output=True).stderr
             assert (b"-Ddecoder-drc=true" in drc) == (sys.argv[6] != "true"), drc.decode(errors="replace")
             with wave.open(he_out) as w:

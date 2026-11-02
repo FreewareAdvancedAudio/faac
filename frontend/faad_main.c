@@ -75,10 +75,10 @@ static const help_t help_io[] = {
 };
 
 static const help_t help_processing[] = {
-    {"--drc-cut N, --drc-boost N", "Dynamic Range Control (DRC) strength 0..127 (default: 0)",
-     "These are separate controls for attenuating loud passages and boosting quiet passages when the stream carries DRC metadata. Both default to zero, so DRC is off unless requested."},
-    {"--drc-target N", "Dynamic Range Control target: 0 off, 40..127 quarter-dB below FS (96 = -24 dBFS)",
-     "The target controls level normalization when DRC metadata is present. Zero leaves normalization off; accepted nonzero targets are 40 through 127."},
+    {"--drc-cut <percent>, --drc-boost <percent>", "Dynamic Range Control (DRC) strength, 0 to 100 percent (default: 0)",
+     "These are separate controls for attenuating loud passages and boosting quiet passages when the stream carries DRC metadata, such as one written by faac --drc. 100 applies the full encoded gain. Both default to zero, so DRC is off unless requested. Needs a decoder built with decoder-drc."},
+    {"--drc-target-level <dB>", "Normalize to a level in dBFS, -31.75 to -10 (default: off)",
+     "Level normalization moves the stream's program reference level (faac --drc-ref-level) to this level, so -16 plays a stream written with a reference of -23 about 7 dB louder. It does nothing for a stream without a reference level. 0 leaves it off."},
     {"-d, --downmix [mode]",
      "Downmix audio (mono/1 or stereo/2, default: mono)",
      "Choose one or two output channels. Without a mode, mono is selected. This affects decoded PCM, not ADTS extraction."},
@@ -289,7 +289,7 @@ int main(int argc, char **argv)
         {"extract-adts", required_argument, 0, 'a'},
         {"drc-cut", required_argument, 0, OPT_DRC_CUT},
         {"drc-boost", required_argument, 0, OPT_DRC_BOOST},
-        {"drc-target", required_argument, 0, OPT_DRC_TARGET},
+        {"drc-target-level", required_argument, 0, OPT_DRC_TARGET},
         {"downmix", optional_argument, 0, 'd'},
         {"jump", required_argument, 0, 'j'},
         {"seek", required_argument, 0, 'j'},
@@ -314,18 +314,27 @@ int main(int argc, char **argv)
     while ((opt = getopt_long(argc, argv, "o:wf:b:a:d::j:giqv:hH", long_options, &option_index)) != -1) {
         switch (opt) {
         case OPT_DRC_CUT:
-        case OPT_DRC_BOOST:
-        case OPT_DRC_TARGET: {
+        case OPT_DRC_BOOST: {
             char *end;
-            long value = strtol(optarg, &end, 10);
-            if (!*optarg || *end || value < 0 || value > 127
-                || (opt == OPT_DRC_TARGET && value && value < 40)) {
-                fprintf(stderr, "Invalid DRC value '%s'\n", optarg);
+            double percent = strtod(optarg, &end);
+            if (!*optarg || *end || !(percent >= 0.0 && percent <= 100.0)) {
+                fprintf(stderr, "Invalid --%s '%s' (expected a percentage from 0 to 100)\n",
+                        opt == OPT_DRC_CUT ? "drc-cut" : "drc-boost", optarg);
                 return 1;
             }
-            if (opt == OPT_DRC_CUT) opts.drc_cut = (uint8_t)value;
-            else if (opt == OPT_DRC_BOOST) opts.drc_boost = (uint8_t)value;
-            else opts.drc_target = (uint8_t)value;
+            uint8_t scale = (uint8_t)(percent * 127.0 / 100.0 + 0.5);
+            if (opt == OPT_DRC_CUT) opts.drc_cut = scale;
+            else opts.drc_boost = scale;
+            break;
+        }
+        case OPT_DRC_TARGET: {
+            char *end;
+            double level = strtod(optarg, &end);
+            if (!*optarg || *end || !(level == 0.0 || (level >= -31.75 && level <= -10.0))) {
+                fprintf(stderr, "Invalid --drc-target-level '%s' (expected 0 for off, or -31.75 to -10 dB)\n", optarg);
+                return 1;
+            }
+            opts.drc_target = (float)level;
             break;
         }
         case 'o': opts.output_filename = optarg; break;
