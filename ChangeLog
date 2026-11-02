@@ -60,6 +60,12 @@ Unreleased
 	  12-28), narrowing to 8-12 at 32 kHz; VBR up to -q 75 (was 60);
 	  HE-AAC v1 for multichannel layouts up to 8 channels, with one SBR
 	  fill element per SCE/CPE instead of one per frame
+	* CLI: faac gains `--profile`, `--bandwidth`, `--stereo-mode`,
+	  `--block-type`, `--mpeg-version`, `--stream-format` and `--raw-pcm`,
+	  `--raw-rate`, `--raw-bits`, `--raw-channels`, `--raw-endian`; faad gains
+	  `--bit-depth`/`--sample-depth`, `--seek`/`--start-time` and
+	  `--extract-adts`. The old names remain as aliases. `--stereo-mode` and
+	  `--block-type` now reject unknown values instead of reading them as 0
 	* Rate control: signed bit account for ABR; a real bit reservoir for CBR
 	  behind `--cbr`
 	* Refit the ABR bandwidth curve from a sweep: a wider core at 24-56 kbps
