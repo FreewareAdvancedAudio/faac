@@ -282,7 +282,7 @@ jobs:
       # restores the newest. PR caches are not visible to master, so the
       # push-to-master run is what accumulates the corpus.
       - name: Restore fuzz corpus
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             build/fuzz/corpus_*
