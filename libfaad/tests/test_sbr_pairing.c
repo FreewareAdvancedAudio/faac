@@ -162,15 +162,20 @@ static void fill(faad_decoder *dec, uint32_t ch0, uint32_t syntax_id)
     assert(sbr_decode_extension(dec, &bs, ch0, syntax_id, false) == FAAD_OK);
 }
 
-/* The same core samples in both channels, depending only on the frame. */
-static void run_frame(faad_decoder *dec, int frame)
+/* The same core samples in every channel, depending only on the frame. */
+static void run_frame_n(faad_decoder *dec, int frame, uint32_t num_ch)
 {
     uint32_t seed = 1234567u + (uint32_t)frame;
     for (int i = 0; i < 1024; i++) {
         seed = seed * 1664525u + 1013904223u;
-        dec->pcm[i] = dec->pcm[SBR_OUT_LEN + i] = ((int)(seed >> 16) - 32768) / 8.0f;
+        for (uint32_t c = 0; c < num_ch; c++) dec->pcm[c * SBR_OUT_LEN + i] = ((int)(seed >> 16) - 32768) / 8.0f;
     }
-    sbr_apply(dec, 2, dec->pcm);
+    sbr_apply(dec, num_ch, dec->pcm);
+}
+
+static void run_frame(faad_decoder *dec, int frame)
+{
+    run_frame_n(dec, frame, 2);
 }
 
 /* A CPE with coupled SBR, then two SCEs of which only the second carries
@@ -198,6 +203,76 @@ static void test_sbr_apply_layout_change_unpairs(void)
     assert(faad_decoder_close(&changed) == FAAD_OK);
     assert(faad_decoder_close(&reference) == FAAD_OK);
 }
+
+/* A CPE with coupled SBR, then an SCE at channel 0 that carries none and an
+ * SCE at channel 1 that does. Channel 0 has no payload of its own, so it
+ * decodes like a channel whose SBR never started. */
+static void test_sbr_apply_stale_partner_not_enhanced(void)
+{
+    faad_decoder *changed = open_sbr(), *reference = open_sbr();
+    int frame = 0;
+    for (; frame < 2; frame++) {
+        fill(changed, 0, ID_CPE);
+        run_frame(changed, frame);
+        run_frame(reference, frame);
+    }
+    for (; frame < 4; frame++) {
+        fill(changed, 1, ID_SCE);
+        fill(reference, 1, ID_SCE);
+        run_frame(changed, frame);
+        run_frame(reference, frame);
+    }
+    assert(memcmp(changed->pcm, reference->pcm, sizeof(float[SBR_OUT_LEN])) == 0);
+    assert(faad_decoder_close(&changed) == FAAD_OK);
+    assert(faad_decoder_close(&reference) == FAAD_OK);
+}
+
+#if MAX_CHANNELS >= 3
+/* An SCE at channel 0 and a CPE at channel 1, then an SCE at channel 0, an
+ * SCE at channel 1 without SBR and an SCE at channel 2. Channel 1 has no
+ * payload of its own and decodes like a channel whose SBR never started,
+ * and channel 2 like an SCE that never belonged to the CPE. */
+static void test_sbr_apply_layout_change_beyond_first_pair(void)
+{
+    faad_decoder *changed = open_sbr(), *reference = open_sbr();
+    int frame = 0;
+    for (; frame < 2; frame++) {
+        fill(changed, 0, ID_SCE);
+        fill(changed, 1, ID_CPE);
+        fill(reference, 0, ID_SCE);
+        run_frame_n(changed, frame, 3);
+        run_frame_n(reference, frame, 3);
+    }
+    for (; frame < 4; frame++) {
+        fill(changed, 0, ID_SCE);
+        fill(changed, 2, ID_SCE);
+        fill(reference, 0, ID_SCE);
+        fill(reference, 2, ID_SCE);
+        run_frame_n(changed, frame, 3);
+        run_frame_n(reference, frame, 3);
+    }
+    assert(memcmp(changed->pcm + SBR_OUT_LEN, reference->pcm + SBR_OUT_LEN,
+                  sizeof(float[SBR_OUT_LEN])) == 0);
+    assert(memcmp(changed->pcm + 2 * SBR_OUT_LEN, reference->pcm + 2 * SBR_OUT_LEN,
+                  sizeof(float[SBR_OUT_LEN])) == 0);
+    assert(faad_decoder_close(&changed) == FAAD_OK);
+    assert(faad_decoder_close(&reference) == FAAD_OK);
+
+    /* The CPE at channel 1 becomes an SCE and then a CPE again. */
+    faad_decoder *dec = open_sbr();
+    for (frame = 0; frame < 2; frame++) {
+        fill(dec, 1, ID_CPE);
+        run_frame_n(dec, frame, 3);
+    }
+    assert(dec->sbr[1].primed && dec->sbr[1].E_prev[0] != 0);
+    fill(dec, 1, ID_SCE);
+    assert(!dec->sbr[1].primed && dec->sbr[1].E_prev[0] == 0);
+    run_frame_n(dec, frame++, 3);
+    fill(dec, 1, ID_CPE);
+    assert(!dec->sbr[1].primed && !dec->sbr[2].primed && dec->sbr[2].E_prev[0] == 0);
+    assert(faad_decoder_close(&dec) == FAAD_OK);
+}
+#endif
 
 /* A CPE refilled every frame stays coupled: with a centred balance and the
  * same core samples, both channels decode alike. */
@@ -241,11 +316,13 @@ static void test_sbr_read_extension_restarts_taken_channels(void)
         fill(dec, 0, ID_CPE);
         run_frame(dec, frame);
     }
+    assert(dec->sbr[0].primed && dec->sbr[0].E_prev[0] != 0);
     fill(dec, 0, ID_SCE);
+    assert(!dec->sbr[0].primed && dec->sbr[0].E_prev[0] == 0);
     run_frame(dec, frame++);
     assert(dec->sbr[0].primed && dec->sbr[1].primed && dec->sbr[1].E_prev[0] != 0);
     fill(dec, 0, ID_CPE);
-    assert(dec->sbr[0].primed);
+    assert(!dec->sbr[0].primed);
     assert(!dec->sbr[1].primed && dec->sbr[1].E_prev[0] == 0);
     run_frame(dec, frame);
     assert(faad_decoder_close(&dec) == FAAD_OK);
@@ -255,6 +332,10 @@ int main(void)
 {
     build_fills();
     test_sbr_apply_layout_change_unpairs();
+    test_sbr_apply_stale_partner_not_enhanced();
+#if MAX_CHANNELS >= 3
+    test_sbr_apply_layout_change_beyond_first_pair();
+#endif
     test_sbr_apply_coupled_pair_kept();
     test_sbr_read_extension_restarts_taken_channels();
     return 0;

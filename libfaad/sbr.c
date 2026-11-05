@@ -718,12 +718,12 @@ static faad_status sbr_read_extension(struct faad_decoder *dec, BitReader *bs, u
     SBRChannel *chs[2] = { &dec->sbr[ch0], &dec->sbr[ch0 + (nch > 1 ? 1 : 0)] };
     /* A channel continues only from this element's previous fill. New tables
      * start it over, and so does a change of element layout: a channel that
-     * fill did not include holds another element's deltas and history. */
-    bool restart[2] = { false, false };
+     * fill did not include holds another element's deltas and history, and
+     * a single channel and a pair share neither. */
+    if (el->nch != nch) reset_synthesis = true;
     for (int c = 0; c < nch; c++) {
         SBRChannel *ch = chs[c];
-        restart[c] = reset_synthesis || c >= el->nch || ch->el_ch != ch0;
-        if (!restart[c]) continue;
+        if (!reset_synthesis && ch->el_ch == ch0) continue;
         memset(ch->E_prev, 0, sizeof(ch->E_prev));
         memset(ch->Q_prev, 0, sizeof(ch->Q_prev));
         ch->freq_res_prev = 1;
@@ -815,7 +815,7 @@ static faad_status sbr_read_extension(struct faad_decoder *dec, BitReader *bs, u
     /* Synthesis history is not read by the parser. Commit its reset only
      * after a valid fill, keeping it out of the rollback snapshot. */
     for (int c = 0; c < nch; c++) {
-        if (restart[c]) sbr_reset_synthesis(chs[c]);
+        if (reset_synthesis || chs[c]->el_ch != ch0) sbr_reset_synthesis(chs[c]);
         chs[c]->have_frame = true;
         chs[c]->el_ch = (uint8_t)ch0;
     }
@@ -1445,12 +1445,15 @@ void sbr_apply(struct faad_decoder *dec, uint32_t num_ch, float *pcm)
         SBRElement *el = &dec->sbr_el[ch];
         /* After a change of element layout, a channel can still hold another
          * element's payload: pair and enhance only the channels this element
-         * filled, so a coupled pair always shares one grid. */
-        bool pair = el->header_present && el->nch == 2 && (ch + 1 < num_ch) &&
-                    dec->sbr[ch].el_ch == ch && dec->sbr[ch + 1].el_ch == ch;
+         * filled, so a coupled pair always shares one grid. A coupled
+         * element whose partner now belongs to another element has no
+         * payload of its own to apply. */
+        bool own = dec->sbr[ch].el_ch == ch;
+        bool partner = el->nch == 2 && ch + 1 < num_ch;
+        bool pair = el->header_present && partner && own && dec->sbr[ch + 1].el_ch == ch;
         int nch = pair ? 2 : 1;
-        bool have_hf = el->header_present && dec->sbr[ch].el_ch == ch && dec->sbr[ch].have_frame &&
-                       (!pair || dec->sbr[ch + 1].have_frame);
+        bool have_hf = el->header_present && own && dec->sbr[ch].have_frame &&
+                       (pair ? dec->sbr[ch + 1].have_frame : !partner);
 
         if (have_hf) sbr_dequant(el, &dec->sbr[ch], pair ? &dec->sbr[ch + 1] : NULL, E0, Q0, E1, Q1);
 #ifndef FAAD_DISABLE_DRC
