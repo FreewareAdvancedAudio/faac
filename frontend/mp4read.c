@@ -212,6 +212,7 @@ static bool read_track_io(faam_io *io, const uint8_t *prefix, uint64_t file_size
         if (faam_demuxer_get_num_metadata(d, &meta_count) == FAAM_OK) add_tags(track, d, meta_count);
         /* Same resolution as faam info. */
         track->delay = encoder_quirk_resolve_delay(d, track_id, track->delay, NULL);
+        track->delay_includes_decoder = encoder_quirk_priming_includes_decoder_delay(d, track_id);
         collect_samples(d, track_id, file_size, track);
     }
 
