@@ -1,19 +1,40 @@
 Unreleased
 
 	[ Nils Schimmelmann ]
-	* New libraries and tools: libfaad and faad (decoder), libfaam and faam
-	  (MP4 muxer, demuxer and tag editor) and libfaar and faar (sample
-	  rate converter); faac writes MP4 through libfaam and resamples
-	  through libfaar
-	* HE-AAC v2 encoding with Parametric Stereo behind -Dencoder-ps;
-	  stereo AUTO picks it for explicit bitrates up to the sample-rate
-	  dependent ceiling; -Dencoder-sbr=false builds an LC-only encoder
+	* New decoder libfaad and faad: a complete rewrite from the FAAC codebase
+	  (not derived from FAAD2), LGPL-2.1-or-later, with its own libfaad3 API;
+	  faad reports DAB+ support in FAAD_LIB_DAB
+	* New libraries and tools: libfaam and faam (MP4 muxer, demuxer and tag
+	  editor) and libfaar and faar (sample rate converter); faac writes MP4
+	  through libfaam and resamples through libfaar
+	* HE-AAC v2 encoding with Parametric Stereo behind -Dencoder-ps, off by
+	  default because the PS patents have not expired; stereo AUTO picks it
+	  only for explicit stereo bitrates up to 16 kbps total (12 kbps at 32
+	  and 44.1 kHz), below where it used to fall back to LC or HE-AAC v1;
+	  --profile auto|lc|he-v1|he-v2 selects explicitly. -Dencoder-sbr=false
+	  builds an LC-only encoder
+	* HE-AAC v1 auto ceiling raised from 32 kbps per channel to 1 bit/s per
+	  Hz of sample rate through 48 kHz (48 kbps per channel at 48 kHz, 44.1 at
+	  44.1 kHz, 32 at 32 kHz where it was 12), so a stereo -b 80 at 48 kHz
+	  that was AAC-LC is now HE-AAC v1
+	* Automatic resampling: --rate auto (default), keep or <Hz>. In ABR and CBR
+	  input above 48 kHz goes to 44.1 or 48 kHz and 44.1/48 kHz input goes to
+	  32 kHz at very low bitrates when the encoder resolves to AAC-LC
+	  (--profile lc or an LC-only build). --rate keep
+	  turns it off; the MP4 tag records the mapping. VBR keeps the input
+	  rate, capped at 96 kHz. faar takes --quality
+	  fast|good|high, --dither none|tpdf|shaped and -D<n>, with output rates
+	  7350-192000 Hz; input above 48 kHz is resampled with high
 	* libfaac ABI 3: faac_params takes a whole-stream bitrate with explicit
 	  ABR, VBR and CBR modes, channels, stereo_mode, stream_format
 	  (including MPEG-2 ADTS) and channel layouts; faac_encoder_info
 	  carries the AudioSpecificConfig; float input is unity full scale;
 	  faac_library_info reports SBR and PS through flags. Each shared
-	  library now has its own ABI version, separate from the release
+	  library now has its own ABI version, separate from the release. Code
+	  built for ABI 2 recompiles but misbehaves: a per-channel bit_rate
+	  encodes at 1/N of the rate and old-scale float input encodes as silence
+	* -q values are not comparable with 2.2: the same -q now gives a
+	  different bitrate
 	* Dynamic range control: faac --drc <profile> writes dynamic_range_info
 	  from the input's K-weighted loudness (profiles: film, film-light,
 	  music, music-light, speech; --drc-ref-level sets the program level);
@@ -25,11 +46,18 @@ Unreleased
 	* Eight-channel streams are signalled with a program config element in
 	  the AudioSpecificConfig and in every 32nd ADTS frame; faad and faam
 	  read them
-	* frontend: record active encoding settings (rate, cutoff, profile,
-	  M/S, TNS) in the MP4 encoder tag (©too) with --no-encoder-info to
-	  omit it; record resampling and HE profile in the tag; initialize console
-	  code page to UTF-8 on Windows; align option help columns; handle 5.0 and
-	  7.1 channel ordering
+	* Filter bank: AAC-LC long windows use a Kaiser-Bessel Derived window
+	  again instead of the sine window, to cut spectral leakage from loud
+	  low-frequency tones into the broadband noise floor (bass-heavy intros at
+	  high quality); short windows, LFE channels and the HE-AAC core keep sine
+	* Encoder retunes: stereo masking and M/S selection, short-window onset
+	  targets (less pre-echo), SBR envelopes and transient borders, and the
+	  HE-AAC auto ceiling
+	* frontend: the MP4 encoder tag (©too) records rate or mode, profile and
+	  cutoff always, and resampling, M/S, TNS, PNS and the other settings only
+	  when they differ from the defaults; --no-encoder-info omits it.
+	  Initialize console code page to UTF-8 on Windows; align option help
+	  columns; handle 5.0 and 7.1 channel ordering
 	* frontend tags: added generic typed metadata entries (faam_metadata_entry)
 	  to faam and faac, supporting lyrics (--lyrics, --lyrics-file), grouping
 	  (--grouping), copyright (--copyright), description (--description),
@@ -43,19 +71,31 @@ Unreleased
 	  display across faac, faad, faam and faar; progress callbacks throttled
 	  to ~30 Hz with %7.1f bitrate formatting; name build options when
 	  compiled-out features are requested
+	* Gapless: faad and faam trim by iTunSMPB or, without it, by the edit list
+	  and the decoded sample count; Nero HE-AAC priming is read without the
+	  decoder delay and FAAC 1.x priming is inferred from the encoder tag
+	* libfaam: chapters (chpl plus a QuickTime text track), built out with
+	  -Dmuxer-chapters=false, and custom tags are copied
+	* High-resolution VBR improved above 48 kHz; the SBR stop frequency stays
+	  above the start frequency at 64 kHz and up; LFE channels stay on long
+	  windows
+	* Hardening: the encoder API and WAV reader reject hostile input,
+	  allocation failures are handled, and a request for more channels than
+	  the build supports is refused
+	* CLI options modernized with the old names kept as aliases; --tag accepts
+	  = as a separator; ADTS stream info is reported after the first frame
+	* libfaad: faster S16 output and SBR windows with bit-exact output: ~21%
+	  (AAC-LC) and ~26% (HE-AAC v1) faster on an ESP32-S3, ~10% less CPU time
+	  on x86-64 at -O2 and unchanged at -O3
 	* Win32 GUI (faacgui): ported to shared encoding engine with libfaam MP4
 	  output, quality and stereo mode labels, and conditional HE-AAC options
-	* faad reports DAB+ support in FAAD_LIB_DAB; faac and faad name the
-	  build option when a stream or request needs a feature that was
-	  compiled out
-	* Encoder retunes: stereo masking and M/S selection,
-	  short-window onset targets, SBR envelopes and transient borders, and
-	  HE-AAC auto ceiling
+	* Build options: decoder-sbr, decoder-ps, decoder-dab, decoder-drc,
+	  muxer, muxer-video, muxer-fragmented, muxer-chapters, resampler and
+	  resampler-float; faac and faad name the build option when a stream or
+	  request needs a feature that was compiled out
 	* Documentation and man pages rewritten for libfaac, libfaad, libfaar
-	  and libfaam, with comprehensive tables for parameters, defaults,
-	  errors, and flags
-	* Build & tests: detect host byte order without config.h; add
-	  unit, integration, ABI, link and fuzz test coverage
+	  and libfaam; build: detect host byte order without config.h; add unit,
+	  integration, ABI, link and fuzz test coverage
 
 	[ Mar Dominguez ]
 	* libfaad: pair and enhance SBR channels only for the element that filled
