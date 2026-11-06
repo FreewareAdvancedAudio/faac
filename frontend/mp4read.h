@@ -48,6 +48,7 @@ typedef struct {
     uint32_t asc_len;
     uint32_t delay;
     uint32_t padding;
+    bool delay_includes_decoder;
     uint32_t timescale;
     uint32_t max_bitrate;
     MP4Sample *samples;

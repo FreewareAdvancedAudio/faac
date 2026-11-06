@@ -68,6 +68,7 @@ typedef struct {
 
     bool is_mp4;
     bool gapless;
+    bool delay_includes_decoder;
     uint32_t samples_to_skip;
     uint32_t padding_samples;
     bool gapless_scaled;
@@ -484,7 +485,7 @@ static bool pcm_writer_write_frame(PCMWriter *w, faad_decoder *dec, faad_stream_
         uint32_t core_rate = (flags & FAAD_FRAME_SBR) && sinfo->frame_samples == 2048
             ? sinfo->sample_rate / 2 : sinfo->sample_rate;
         uint32_t timescale = track->timescale ? track->timescale : core_rate;
-        uint32_t delay = w->gapless ? sinfo->decoder_delay : 0;
+        uint32_t delay = w->gapless && !w->delay_includes_decoder ? sinfo->decoder_delay : 0;
         w->samples_to_skip = (uint32_t)((uint64_t)w->samples_to_skip * sinfo->sample_rate / timescale) + delay;
         w->padding_samples = (uint32_t)((uint64_t)w->padding_samples * sinfo->sample_rate / timescale);
         w->padding_samples = w->padding_samples > delay ? w->padding_samples - delay : 0;
@@ -900,6 +901,7 @@ int run_decoding_session_ext(const decode_options_t *opts,
             ret_status = DECODE_ERROR;
             goto cleanup;
         }
+        writer.delay_includes_decoder = track.delay_includes_decoder;
         if (write_stdout) quiet = true;
     }
 

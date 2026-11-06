@@ -518,6 +518,36 @@ def run_all(t, d):
     primed = (wav_data_len(os.path.join(d, "explicit_nogap.wav")) - wav_data_len(os.path.join(d, "explicit_default.wav"))) // (CHANNELS * 2)
     check(primed == 512, f"explicit container delay wins over the legacy tag (got {primed})")
 
+    # Nero's container priming already includes the SBR decoder delay, so faad
+    # must skip exactly the container delay for it, and delay + 962 otherwise.
+    if ENCODER_SBR:
+        def pcm_data(path):
+            b = read(path)
+            return b[b.index(b"data") + 8:]
+        info = t.faam_run(["info", "gapless_he.m4a"], d).stdout
+        m = re.search(rb"Encoder Delay: (\d+) samples", info)
+        check(m is not None, "gapless_he.m4a has an encoder delay")
+        if m:
+            # The container delay is in timescale units (the core rate for SBR).
+            ts = int(re.search(rb"Timescale: (\d+)", info).group(1))
+            out_rate = struct.unpack("<I", read(os.path.join(d, "gapless.wav"))[24:28])[0]
+            delay = int(m.group(1)) * out_rate // ts
+            frame = CHANNELS * 2
+            t.run(t.faad, ["-q", "--overwrite", "--no-gapless", "-o", "he_full.wav", "gapless_he.m4a"], d)
+            full = pcm_data(os.path.join(d, "he_full.wav"))
+            for tag, extra in (("Nero AAC codec / 1.5.4.0", 0), ("FAAC 3.0.0", 962)):
+                nm = "he_nero.m4a" if extra == 0 else "he_other.m4a"
+                shutil.copyfile(os.path.join(d, "gapless_he.m4a"), os.path.join(d, nm))
+                r = t.faam_run(["tag", nm, "--tag", f"Encoder={tag}"], d)
+                check(r.returncode == 0, f"{nm} encoder tag set")
+                out = nm.replace(".m4a", ".wav")
+                r = t.run(t.faad, ["-q", "--overwrite", "-o", out, nm], d)
+                check(r.returncode == 0, f"{nm} faad decoding ok")
+                got = pcm_data(os.path.join(d, out))
+                start = (delay + extra) * frame
+                check(got == full[start:start + len(got)] and len(got) > 0,
+                      f"{tag}: decoding starts {delay + extra} samples in")
+
     # Stream input and output independently against the named-file mux.
     expected_mp4 = read(os.path.join(d, "plain.m4a"))
     piped = t.run(t.faam, ["-i", "-", "-o", "pipe_input.m4a"], d,
