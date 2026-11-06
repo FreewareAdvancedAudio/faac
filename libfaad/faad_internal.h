@@ -361,6 +361,7 @@ typedef struct {
     uint16_t index_noise;
     uint8_t  index_sine;
     bool    have_frame;   /* a payload has been decoded since the last reset */
+    uint8_t el_ch;        /* first channel of the element that filled it last */
     bool    primed;       /* smoothing history holds real gains */
     float   x_low_tail[32][SBR_T_HFGEN][2];
     float   y_tail[SBR_MAX_BANDS][SBR_HF_TAIL_SLOTS][2];
