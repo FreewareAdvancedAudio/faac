@@ -30,24 +30,6 @@ static int init_stage(faar_dft_fir *stage, const double *taps,
                       size_t decimation, size_t lanes, int stacked, int compensated);
 
 
-int faar_dft_fir_init(faar_dft_fir *stage, const double *taps,
-                      size_t tap_count, size_t fft_size) {
-    return faar_dft_fir_init_rate(stage, taps, tap_count, fft_size, 1, 1);
-}
-
-int faar_dft_fir_init_expanded(faar_dft_fir *stage, const double *taps,
-                      size_t tap_count, size_t fft_size, size_t expansion) {
-    return faar_dft_fir_init_rate(stage, taps, tap_count, fft_size,
-                                  expansion, 1);
-}
-
-int faar_dft_fir_init_rate(faar_dft_fir *stage, const double *taps,
-                      size_t tap_count, size_t fft_size, size_t expansion,
-                      size_t decimation) {
-    return faar_dft_fir_init_paired(stage, taps, tap_count, fft_size,
-                                    expansion, decimation, 1, 0);
-}
-
 int faar_dft_fir_init_paired(faar_dft_fir *stage, const double *taps,
                       size_t tap_count, size_t fft_size, size_t expansion,
                       size_t decimation, size_t lanes, int stacked) {
@@ -535,17 +517,6 @@ int faar_dft_fir_process(faar_dft_fir *stage, const faar_sample_t *input,
         convolve_paired(stage, input, output);
     update_overlap(stage, input);
     return 0;
-}
-
-void faar_dft_fir_reset(faar_dft_fir *stage) {
-    if (!stage || !stage->overlap) return;
-    memset(stage->overlap, 0, stage->lanes * overlap_stride(stage)
-                                  * sizeof(faar_sample_t));
-    stage->input_fill = 0;
-    stage->output_count = 0;
-    stage->output_offset = 0;
-    stage->finishing = 0;
-    stage->finished = 0;
 }
 
 /* Lane l of the caller's output starts l * stride samples in. */

@@ -179,23 +179,6 @@ static int feed_endpoint(faar_dft_prefilter *s, const float *values,
     return result;
 }
 
-faar_dft_prefilter *faar_dft_prefilter_create(uint16_t channels,
-                                               const double *taps,
-                                               size_t tap_count,
-                                               size_t fft_size) {
-    return faar_dft_prefilter_create_expanded(channels, taps, tap_count,
-                                               fft_size, 1);
-}
-
-faar_dft_prefilter *faar_dft_prefilter_create_expanded(uint16_t channels,
-                                               const double *taps,
-                                               size_t tap_count,
-                                               size_t fft_size,
-                                               size_t expansion) {
-    return faar_dft_prefilter_create_rate(channels, taps, tap_count,
-                                           fft_size, expansion, 1);
-}
-
 faar_dft_prefilter *faar_dft_prefilter_create_stage(uint16_t channels,
                                                const double *taps,
                                                size_t tap_count,
@@ -263,16 +246,6 @@ faar_dft_prefilter *faar_dft_prefilter_create_stage(uint16_t channels,
 fail:
     faar_dft_prefilter_destroy(s);
     return NULL;
-}
-
-faar_dft_prefilter *faar_dft_prefilter_create_rate(uint16_t channels,
-                                               const double *taps,
-                                               size_t tap_count,
-                                               size_t fft_size,
-                                               size_t expansion,
-                                               size_t decimation) {
-    return faar_dft_prefilter_create_stage(channels, taps, tap_count, fft_size,
-                                           expansion, decimation, 0, 0);
 }
 
 faar_dft_prefilter *faar_dft_prefilter_clone_filter(
@@ -466,14 +439,3 @@ int faar_dft_prefilter_flush(faar_dft_prefilter *s, float *output,
     return 0;
 }
 
-void faar_dft_prefilter_reset(faar_dft_prefilter *s) {
-    if (!s) return;
-    for (uint16_t f = 0; f < s->stages; ++f) faar_dft_fir_reset(&s->fir[f]);
-    s->prefix_drop = 2 * s->half / s->decimation;
-    s->fifo_read = s->fifo_count = 0;
-    s->input_count = s->released_count = 0;
-    s->have_input = s->prefix_added = 0;
-    s->finishing = s->finished = 0;
-    memset(s->first, 0, sizeof(s->first));
-    memset(s->last, 0, sizeof(s->last));
-}
