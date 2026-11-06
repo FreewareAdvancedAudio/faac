@@ -28,7 +28,7 @@ static int init_precise_plans(faar_dft_fir *stage, const faar_dft_fir *owner) {
         : faar_float2_init_shared(&stage->precise_out, nout, &stage->precise_in);
 }
 
-static int init_precise_spectrum(faar_dft_fir *stage, const double *taps) {
+static int init_compensated_spectrum(faar_dft_fir *stage, const double *taps) {
     size_t n = stage->fft_size;
     if (init_precise_plans(stage, NULL)) return -1;
     stage->spec = AllocMemory(2 * n * sizeof(*stage->spec));
@@ -99,13 +99,13 @@ static void convolve_precise(faar_dft_fir *stage, const float *input, float *out
             output[stage->output_block_size + i] = -ff2_round(wi[skip + i]);
 }
 
-static void process_precise_halfband(faar_dft_fir *stage, float *output) {
+static void process_compensated_halfband(faar_dft_fir *stage, float *output) {
     size_t n = stage->tap_count, count = stage->block_size / 2;
-    faar_float2 *acc = stage->precise_half_work;
+    faar_float2 *acc = stage->half_work;
     for (size_t i = 0; i < count; ++i)
-        acc[i] = ff2_mulf(stage->precise_half_coeffs[n / 4], stage->work[2 * i + n / 2]);
+        acc[i] = ff2_mulf(stage->half_coeffs[n / 4], stage->work[2 * i + n / 2]);
     for (size_t j = 0; j < n / 4; ++j) {
-        faar_float2 coefficient = stage->precise_half_coeffs[j];
+        faar_float2 coefficient = stage->half_coeffs[j];
         const float *x = stage->work + 2 * j + 1;
         const float *y = stage->work + n - 2 - 2 * j;
         for (size_t i = 0; i < count; ++i) {

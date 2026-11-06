@@ -23,11 +23,20 @@
 
 #include <stddef.h>
 
+/* Element type of the compensated halfband's coefficients and accumulator. */
+#if FAAR_RESAMPLER_FLOAT
+typedef faar_float2 faar_compensated_t;
+static inline faar_compensated_t faar_compensated_setup(double a) { return ff2_setup(a); }
+#else
+typedef double faar_compensated_t;
+static inline faar_compensated_t faar_compensated_setup(double a) { return a; }
+#endif
+
 /* Block overlap-save FIR stage; filter coefficients are supplied by caller. */
 typedef struct faar_dft_fir {
     int shared_coeffs; /* Borrowed immutable coefficients; source outlives stage. */
     int shared_fft; /* Borrowed workspace; executions with source are serialized. */
-    int compensated; /* High in float builds: wider arithmetic in sensitive stages. */
+    int compensated; /* High: sensitive stages run in wider arithmetic (float2 or double). */
     int halfband; /* Sparse time-domain 2:1 FIR; otherwise paired FFT. */
     size_t fft_size;
     size_t tap_count;
@@ -49,13 +58,11 @@ typedef struct faar_dft_fir {
 #if FAAR_RESAMPLER_FLOAT
     faar_float2_plan precise_in, precise_out;
     float *spec_low;
-    faar_float2 *precise_half_coeffs, *precise_half_work;
-#endif
-#if !FAAR_RESAMPLER_FLOAT
+#else
     faar_fftd_plan in_wide, out_wide;
     double *spec_wide;
-    double *wide_half_coeffs, *wide_half_work;
 #endif
+    faar_compensated_t *half_coeffs, *half_work;
     faar_sample_t *spec;
     size_t input_fill;
     size_t output_count;
