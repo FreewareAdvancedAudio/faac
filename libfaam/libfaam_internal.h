@@ -99,6 +99,7 @@ typedef struct {
     uint64_t elst_media_time;
     uint64_t elst_segment_duration;
     uint64_t media_duration; /* mdhd duration in track timescale units */
+    uint32_t max_duration;   /* longest sample duration of the loaded table */
     bool has_elst;
 } faam_demuxer_track;
 

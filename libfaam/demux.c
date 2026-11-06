@@ -772,6 +772,7 @@ static faam_status faam_parse_stream(struct faam_demuxer *d, const uint8_t *buf,
                     tr->samples[sample_idx].is_keyframe = is_keyframe;
 
                     track_tot_duration += duration;
+                    if (duration > tr->max_duration) tr->max_duration = duration;
                     sample_offset_in_chunk += size;
                     sample_idx++;
                 }
@@ -940,6 +941,16 @@ static faam_status load_fragment(faam_demuxer *d)
 }
 #endif /* FAAM_MUXER_FRAGMENTED */
 
+/* Decoders emit whole packets, so padding is measured against the packet count
+ * times the regular duration; mdhd can be short when a muxer shortens the last
+ * packet or writes a wrong total. */
+static uint64_t track_decoded_duration(const faam_demuxer *d, const faam_demuxer_track *tr)
+{
+    if (d->fragmented || tr->info.track_type != FAAM_TRACK_AUDIO || !tr->max_duration)
+        return tr->media_duration;
+    return (uint64_t)tr->max_duration * tr->total_frames;
+}
+
 faam_status faam_demuxer_config_init(faam_demuxer_config *config, uint32_t caller_size)
 {
     if (!config || caller_size < FAAM_DEMUXER_CONFIG_BASELINE) return FAAM_ERR_INVALID_ARGUMENT;
@@ -999,8 +1010,9 @@ faam_status faam_demuxer_open(const faam_demuxer_config *config, const faam_io *
                         if (ti->track_type != FAAM_TRACK_AUDIO || !ti->timescale || !d->movie_timescale) continue;
                         uint64_t edit = d->elst_segment_duration * ti->timescale / d->movie_timescale;
                         uint64_t used = d->elst_media_time + edit;
-                        if (edit && d->tracks[t].media_duration > used)
-                            d->gapless.end_padding = (uint32_t)(d->tracks[t].media_duration - used);
+                        uint64_t media = track_decoded_duration(d, &d->tracks[t]);
+                        if (edit && media > used)
+                            d->gapless.end_padding = (uint32_t)(media - used);
                         d->gapless.total_samples = edit;
                         break;
                     }
@@ -1122,8 +1134,9 @@ static faam_status track_gapless(const faam_demuxer *d, uint32_t track_id, faam_
         }
         uint64_t used = delay + edit;
         uint32_t padding = 0;
-        if (edit && tr->media_duration > used) {
-            padding = (uint32_t)(tr->media_duration - used);
+        uint64_t media = track_decoded_duration(d, tr);
+        if (edit && media > used) {
+            padding = (uint32_t)(media - used);
         }
         out_gapless->encoder_delay = delay;
         out_gapless->end_padding = padding;

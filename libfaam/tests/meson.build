@@ -74,3 +74,9 @@ test_faam_chapter_layout = executable('test_faam_chapter_layout', 'test_faam_cha
   link_with: libfaam_static,
   c_args: faam_args + ['-DFAAM_STATIC'])
 test('test_unit_faam_chapter_layout', test_faam_chapter_layout)
+
+test_faam_edit_padding = executable('test_faam_edit_padding', 'test_faam_edit_padding.c',
+  include_directories: [libfaam_inc, '..'],
+  link_with: libfaam_static,
+  c_args: faam_args + ['-DFAAM_STATIC'])
+test('test_unit_faam_edit_padding', test_faam_edit_padding)
