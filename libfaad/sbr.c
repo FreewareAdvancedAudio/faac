@@ -1060,9 +1060,9 @@ static void sbr_hf_adjust(const SBRElement *el, SBRChannel *ch, SBRScratch *sc,
             q_m[m] = sqrtf(eo * q / (1.0f + q));
             s_m[m] = s_index[m] ? sqrtf(eo / (1.0f + q)) : 0.0f;
             if (!s_mapped[m])
-                gain[m] = sqrtf(eo / ((1.0f + ec) * (1.0f + (transient ? 0.0f : q))));
+                gain[m] = sqrtf(eo / ((ch->unit_energy + ec) * (1.0f + (transient ? 0.0f : q))));
             else
-                gain[m] = sqrtf(eo * q / ((1.0f + ec) * (1.0f + q)));
+                gain[m] = sqrtf(eo * q / ((ch->unit_energy + ec) * (1.0f + q)));
         }
 
         /* limiter and boost per limiter band */
@@ -1457,6 +1457,8 @@ void sbr_apply(struct faad_decoder *dec, uint32_t num_ch, float *pcm)
         bool have_hf = el->header_present && own && dec->sbr[ch].have_frame &&
                        (pair ? dec->sbr[ch + 1].have_frame : !partner);
 
+        dec->sbr[ch].unit_energy = 1.0f;
+        if (pair) dec->sbr[ch + 1].unit_energy = 1.0f;
         if (have_hf) sbr_dequant(el, &dec->sbr[ch], pair ? &dec->sbr[ch + 1] : NULL, E0, Q0, E1, Q1);
 #ifndef FAAD_DISABLE_DRC
         if (have_hf && dec->drc.applied) {
@@ -1465,6 +1467,7 @@ void sbr_apply(struct faad_decoder *dec, uint32_t num_ch, float *pcm)
                 float gain = dec->drc.sbr_gain[ch + c];
                 if (gain == 1.0f) continue;
                 SBRChannel *channel = &dec->sbr[ch + c];
+                channel->unit_energy = gain;
                 for (int l = 0; l < channel->L_E; l++) {
                     int nb = channel->freq_res[l] ? el->n_high : el->n_low;
                     for (int k = 0; k < nb; k++) energy[c][l][k] *= gain;

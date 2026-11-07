@@ -350,6 +350,7 @@ typedef struct {
     uint8_t freq_res_prev;
     /* Synthesis history is committed only after a complete fill. */
     float   bw_array[SBR_MAX_NQ];
+    float   unit_energy; /* the spec's unit energy, scaled with the envelope when DRC is applied */
     float   g_hist[4][SBR_MAX_BANDS]; /* gains of the four previous envelopes, a ring */
     float   q_hist[4][SBR_MAX_BANDS];
     uint8_t hist_pos;                 /* oldest entry of the ring */

@@ -90,6 +90,11 @@ def main():
                 assert energy(base, frequency) > 1e-8
                 db = 10*math.log10(energy(changed, frequency)/energy(base, frequency))
                 assert abs(db - (-20*math.log10(2) if enabled else 0)) < .5, (frequency, db)
+            # The cut must be a pure scale of the whole decode: any term in the SBR
+            # adjustment that does not scale with the gain shows up here.
+            scale = 0.5 if enabled else 1.0
+            rms = math.sqrt(sum(x * x for x in base) / len(base))
+            assert max(abs(c - scale * b) for b, c in zip(base, changed)) < 1e-4 * rms
             print('HE core and HF gain: PASS')
         if case == 'he' and sbr == 'true':
             os.unlink(aac)
