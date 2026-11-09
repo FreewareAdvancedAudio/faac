@@ -28,6 +28,7 @@
 #include <string.h>
 #include "build_defaults.h"
 #include <math.h>
+#include "bits.h"
 #include <float.h>
 #include "endian.h"
 
@@ -541,7 +542,9 @@ static inline uint32_t faad_layout_mask(const struct faad_decoder *dec, uint32_t
 static inline uint32_t faad_downmix_lfe_channel(const struct faad_decoder *dec, uint32_t num_chs)
 {
     if (dec->config.stream_format != FAAD_STREAM_RAW || !dec->asc_parsed
-        || dec->config.downmix_mode == FAAD_DOWNMIX_NONE)
+        || dec->config.downmix_mode == FAAD_DOWNMIX_NONE
+        || (dec->config.downmix_mode & 8u) /* the target keeps the LFE */
+        || faac_popcount32((uint32_t)dec->config.downmix_mode) >= num_chs) /* nothing is mixed */
         return UINT32_MAX;
 #if MAX_CHANNELS >= 3
     if (dec->layout.n == num_chs && dec->layout.lfe != 0xff) return dec->layout.lfe;
