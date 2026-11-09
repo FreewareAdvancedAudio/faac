@@ -139,7 +139,6 @@ typedef struct
     unsigned rich_min_rate;
     unsigned slope_rate_threshold;
     float slope_reference_rate;
-    float tilt_nyquist_khz;
     MaskingProfile profiles[2];
     MaskingTiltKnot tilt[MASKING_TILT_KNOTS];
 } MaskingModel;
@@ -177,7 +176,6 @@ static const MaskingModel masking_model = {
      * slope relative to 44.1 kHz. These are not the tilt's frequency units. */
     .slope_rate_threshold = 48000,
     .slope_reference_rate = 44100.0f,
-    .tilt_nyquist_khz = 24.0f, /* 48 kHz reference rate / 2, not stream Nyquist */
     .profiles = {
         /* Average-energy share, power-law loudness exponent, slope multiplier.
          * The exponent compresses band/reference energy ratios; both weights
@@ -190,8 +188,10 @@ static const MaskingModel masking_model = {
         { .avg_weight = 0.15f, .loud_exponent = 0.30f, .slope_scale = 3.0f, .peak_floor = 0.0100f },
     },
     /* Empirical target offsets converted to linear multipliers at the knots.
-     * Positions are kHz at a 48 kHz reference, so they follow the same
-     * normalized bin position at other rates (physical kHz changes with rate).
+     * Positions are physical kHz at every rate. Read as a fraction of a fixed
+     * 24 kHz Nyquist they slid the 14-18 kHz dip down to 9-12 kHz at 32 kHz,
+     * which starved treble bands of bits and moved some into noise
+     * substitution.
      * Interpolate gains between knots rather than dB, so
      * intermediate targets differ from a dB-linear curve. Each stored gain is
      * 10^(offset_dB/20): -1.5 dB, +3 dB and -3 dB retain the fitted anchors. */
@@ -288,8 +288,8 @@ static float loudness(float energy_ratio, float exponent)
     return powf(energy_ratio, exponent);
 }
 
-/* Frequency is normalized to a 48 kHz rate. Interpolate the empirical knot
- * gains directly; this is a lower-cost approximation to dB interpolation. */
+/* Frequency is physical kHz. Interpolate the empirical knot gains directly;
+ * this is a lower-cost approximation to dB interpolation. */
 static float tilt_gain(float khz)
 {
     float gain = masking_model.tilt[MASKING_TILT_KNOTS - 1].gain;
@@ -327,6 +327,7 @@ void QuantizeConfigureMask(AACQuantCfg *cfg, unsigned sample_rate,
     if (sample_rate > masking_model.slope_rate_threshold)
         cfg->treble_slope *= ((float)sample_rate / masking_model.slope_reference_rate);
 
+    cfg->tilt_nyquist_khz = (float)sample_rate / 2000.0f;
     cfg->avg_weight = masking_model.profiles[profile].avg_weight;
     cfg->loud_exponent = masking_model.profiles[profile].loud_exponent;
     cfg->peak_floor = masking_model.profiles[profile].peak_floor;
@@ -406,7 +407,7 @@ static void derive_masking_targets(CoderInfo * __restrict ci, int gnum, int grou
         if (cfg->mask_tuned)
         {
             float center = (float)(lo + hi);
-            float tilt = tilt_gain(0.5f * center * (masking_model.tilt_nyquist_khz * inv_block_len));
+            float tilt = tilt_gain(0.5f * center * (cfg->tilt_nyquist_khz * inv_block_len));
             target *= treble_rolloff(lo, hi, slope_per_line) * tilt;
         }
         else
