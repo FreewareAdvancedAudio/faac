@@ -170,6 +170,7 @@ jobs:
           install: >-
             ${{ matrix.config.msys-env }}-meson
             ${{ matrix.config.msys-env }}-gcc
+            ${{ matrix.config.msys-env }}-cmake
 
       - name: Install dependencies (MSVC)
         if: matrix.config.compiler == 'cl'
@@ -224,6 +225,31 @@ jobs:
         if: matrix.config.shell != 'msys2 {0}' && matrix.config.compiler != 'cl'
         run: meson test -C build --print-errorlogs
 
+      # The consumer uses the installed package, so it needs the prefix from the
+      # install step and cannot be a meson test. The 32-bit job would need -m32
+      # passed through to CMake as well.
+      - name: Test CMake package (General)
+        if: matrix.config.shell != 'msys2 {0}' && matrix.config.compiler != 'cl' && matrix.config.name != 'Linux GCC (32-bit)'
+        run: |
+          cmake -S tests/cmake-consumer -B build-cmake-consumer -DCMAKE_PREFIX_PATH="${{ github.workspace }}/temp"
+          cmake --build build-cmake-consumer
+          build-cmake-consumer/consumer
+          if [ "${{ matrix.config.name }}" = "Linux GCC" ]; then
+            # Both kinds are installed here, so this exercises the static switch.
+            cmake -S tests/cmake-consumer -B build-cmake-consumer-static -DFAAC_USE_STATIC_LIBS=ON -DCMAKE_PREFIX_PATH="${{ github.workspace }}/temp"
+            cmake --build build-cmake-consumer-static
+            build-cmake-consumer-static/consumer
+          fi
+
+      - name: Test CMake package (static-only)
+        if: matrix.config.name == 'Linux GCC'
+        run: |
+          meson setup build-static -Dprefix="${{ github.workspace }}/temp-static" -Ddefault_library=static -Dfrontend=false
+          meson install -C build-static
+          cmake -S tests/cmake-consumer -B build-cmake-static -DCMAKE_PREFIX_PATH="${{ github.workspace }}/temp-static"
+          cmake --build build-cmake-static
+          build-cmake-static/consumer
+
       - name: Smoke-test LC-only encoder
         if: matrix.config.name == 'Linux GCC (LC-only encoder)'
         run: |
@@ -258,6 +284,45 @@ jobs:
           foreach ($lib in @('faac', 'faad', 'faam', 'faar')) {
             if (-not (Get-ChildItem "temp/lib/*$lib*.dll")) { throw "$lib DLL is missing from the package" }
           }
+
+      - name: Test CMake package (MSYS2)
+        if: matrix.config.shell == 'msys2 {0}'
+        run: |
+          # The shared libraries are installed to lib/ and the consumer loads them from PATH.
+          export PATH="$(realpath temp)/lib:$PATH"
+          cmake -G Ninja -S tests/cmake-consumer -B build-cmake-consumer -DCMAKE_PREFIX_PATH="$(realpath temp)"
+          cmake --build build-cmake-consumer
+          build-cmake-consumer/consumer
+
+      - name: Test CMake package (MSVC)
+        if: matrix.config.compiler == 'cl'
+        run: |
+          # The shared libraries are installed to lib/ and the consumer loads them from PATH.
+          $env:PATH = "${{ github.workspace }}/temp/lib;$env:PATH"
+          cmake -G Ninja -S tests/cmake-consumer -B build-cmake-consumer -DCMAKE_PREFIX_PATH="${{ github.workspace }}/temp"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
+          cmake --build build-cmake-consumer
+          if ($LASTEXITCODE -ne 0) { throw 'CMake consumer build failed' }
+          build-cmake-consumer/consumer.exe
+          if ($LASTEXITCODE -ne 0) { throw 'CMake consumer failed' }
+
+          cmake -G Ninja -S tests/cmake-consumer -B build-cmake-consumer-static -DFAAC_USE_STATIC_LIBS=ON -DCMAKE_PREFIX_PATH="${{ github.workspace }}/temp"
+          if ($LASTEXITCODE -ne 0) { throw 'Static-switch CMake configure failed' }
+          cmake --build build-cmake-consumer-static
+          if ($LASTEXITCODE -ne 0) { throw 'Static-switch CMake consumer build failed' }
+          build-cmake-consumer-static/consumer.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Static-switch CMake consumer failed' }
+
+          meson setup build-static "-Dprefix=${{ github.workspace }}/temp-static" -Ddefault_library=static -Dfrontend=false
+          if ($LASTEXITCODE -ne 0) { throw 'Static meson setup failed' }
+          meson install -C build-static
+          if ($LASTEXITCODE -ne 0) { throw 'Static meson install failed' }
+          cmake -G Ninja -S tests/cmake-consumer -B build-cmake-static -DCMAKE_PREFIX_PATH="${{ github.workspace }}/temp-static"
+          if ($LASTEXITCODE -ne 0) { throw 'Static CMake configure failed' }
+          cmake --build build-cmake-static
+          if ($LASTEXITCODE -ne 0) { throw 'Static CMake consumer build failed' }
+          build-cmake-static/consumer.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Static CMake consumer failed' }
 
       - name: Upload artifacts (Windows)
         uses: actions/upload-artifact@v7

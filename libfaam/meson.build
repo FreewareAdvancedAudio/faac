@@ -82,6 +82,8 @@ libfaam_dep = declare_dependency(
   link_with: libfaam,
 )
 
+meson.override_dependency('faam', libfaam_dep)
+
 install_headers(libfaam_headers)
 
 pkgconfig = import('pkgconfig')

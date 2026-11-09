@@ -41,6 +41,12 @@ cc -std=c11 -Wall -Wextra adts_decode.c -o adts_decode $(pkg-config --cflags --l
 - Static linking: `pkg-config --cflags --libs --static faad3`. `--static` adds
   private dependencies but does not choose the archive; install only the static
   library or use your toolchain's archive selection.
+- CMake: `find_package(faac CONFIG REQUIRED COMPONENTS faad3)`, link `faac::faad3` (package `faac`, component `faad3`)
+- CMake, static: add `-DFAAC_USE_STATIC_LIBS=ON` (the default is the shared library)
+- CMake, no package: `pkg_check_modules(LIB REQUIRED IMPORTED_TARGET faad3)`, link `PkgConfig::LIB`
+- Meson: `dependency('faad3')`; as a subproject, call `subproject('faac')` first or
+  list `faac, faad3, faam, faar` under `[provide]` in `subprojects/faac.wrap`
+- Custom Meson options from CMake: [Building with CMake](libfaac.md#building-with-cmake)
 - Custom prefix: set `PKG_CONFIG_PATH` and the runtime library search path.
   Remove legacy FAAD2 include and library paths.
 

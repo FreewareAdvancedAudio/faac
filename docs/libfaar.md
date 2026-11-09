@@ -35,6 +35,12 @@ cc -std=c11 -Wall -Wextra app.c -o app $(pkg-config --cflags --libs faar)
 - Custom prefix: set `PKG_CONFIG_PATH` and the runtime library path. Static linking
   uses `pkg-config --cflags --libs --static faar` plus your toolchain's archive
   selection.
+- CMake: `find_package(faac CONFIG REQUIRED COMPONENTS faar)`, link `faac::faar`
+- CMake, static: add `-DFAAC_USE_STATIC_LIBS=ON` (the default is the shared library)
+- CMake, no package: `pkg_check_modules(LIB REQUIRED IMPORTED_TARGET faar)`, link `PkgConfig::LIB`
+- Meson: `dependency('faar')`; as a subproject, call `subproject('faac')` first or
+  list `faac, faad3, faam, faar` under `[provide]` in `subprojects/faac.wrap`
+- Custom Meson options from CMake: [Building with CMake](libfaac.md#building-with-cmake)
 
 ### Build options
 

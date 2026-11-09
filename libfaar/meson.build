@@ -65,7 +65,9 @@ endif
 libfaar_dep = declare_dependency(
   include_directories: inc,
   link_with: libfaar,
+  dependencies: m_dep,
 )
+meson.override_dependency('faar', libfaar_dep)
 
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(

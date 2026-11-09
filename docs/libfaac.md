@@ -46,7 +46,43 @@ cc -std=c11 -Wall -Wextra adts_encode.c -o adts_encode $(pkg-config --cflags --l
 - Static linking: `pkg-config --cflags --libs --static faac`. `--static` adds
   private dependencies but does not choose the archive; install only the static
   library or use your toolchain's archive selection.
+- CMake: `find_package(faac CONFIG REQUIRED COMPONENTS faac)`, link `faac::faac`
+- CMake, static: add `-DFAAC_USE_STATIC_LIBS=ON` (the default is the shared library)
+- CMake, no package: `pkg_check_modules(LIB REQUIRED IMPORTED_TARGET faac)`, link `PkgConfig::LIB`
+- Meson: `dependency('faac')`; as a subproject, call `subproject('faac')` first or
+  list `faac, faad3, faam, faar` under `[provide]` in `subprojects/faac.wrap`
+- Custom Meson options from CMake: [Building with CMake](#building-with-cmake)
 - Custom prefix: set `PKG_CONFIG_PATH` and the runtime library search path.
+
+### Building with CMake
+
+Build a static faac with your own Meson options from `ExternalProject_Add`. Any option in
+`meson_options.txt` goes on the `meson setup` line; `meson` and `ninja` are required.
+
+```cmake
+include(ExternalProject)
+set(FAAC_PREFIX "${CMAKE_BINARY_DIR}/faac-install")
+ExternalProject_Add(faac_meson
+  SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/faac"
+  CONFIGURE_COMMAND meson setup <BINARY_DIR> <SOURCE_DIR>
+    --prefix=${FAAC_PREFIX} --libdir=lib --buildtype=release
+    -Ddefault_library=static -Dfrontend=false -Ddecoder=false -Dencoder-sbr=false
+  BUILD_COMMAND meson compile -C <BINARY_DIR>
+  INSTALL_COMMAND meson install -C <BINARY_DIR>
+  BUILD_BYPRODUCTS "${FAAC_PREFIX}/lib/libfaac.a")
+
+# The include directory must exist when the imported target is created.
+file(MAKE_DIRECTORY "${FAAC_PREFIX}/include")
+add_library(faac::faac STATIC IMPORTED GLOBAL)
+set_target_properties(faac::faac PROPERTIES
+  IMPORTED_LOCATION "${FAAC_PREFIX}/lib/libfaac.a"
+  INTERFACE_INCLUDE_DIRECTORIES "${FAAC_PREFIX}/include"
+  INTERFACE_LINK_LIBRARIES m)
+add_dependencies(faac::faac faac_meson)
+```
+
+- Match `IMPORTED_LOCATION` and `BUILD_BYPRODUCTS` to the archive in `${FAAC_PREFIX}/lib`.
+- faac is not built through `add_subdirectory()` or `FetchContent`.
 
 ### Without Meson
 

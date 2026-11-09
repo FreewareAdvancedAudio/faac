@@ -82,6 +82,14 @@ else
     libfaad = libfaad_shared
 endif
 
+# Static libraries do not carry libm, so consumers linking the archive need it too.
+libfaad_dep = declare_dependency(
+    include_directories: inc,
+    link_with: libfaad,
+    dependencies: libm,
+)
+meson.override_dependency('faad3', libfaad_dep)
+
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(
     libfaad,

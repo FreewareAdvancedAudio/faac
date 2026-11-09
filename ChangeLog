@@ -112,6 +112,11 @@ Unreleased
 	  muxer, muxer-video, muxer-fragmented, muxer-chapters, resampler and
 	  resampler-float; faac and faad name the build option when a stream or
 	  request needs a feature that was compiled out
+	* CMake package: the install adds faacConfig.cmake, so
+	  find_package(faac CONFIG COMPONENTS faac faad3 faam faar) provides the
+	  faac::faac, faac::faad3, faac::faam and faac::faar targets;
+	  FAAC_USE_STATIC_LIBS=ON selects the static archives. The libraries are
+	  also Meson dependencies named faac, faad3, faam and faar
 	* Documentation and man pages rewritten for libfaac, libfaad, libfaar
 	  and libfaam; build: detect host byte order without config.h; add unit,
 	  integration, ABI, link and fuzz test coverage

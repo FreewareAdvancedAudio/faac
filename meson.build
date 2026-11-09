@@ -115,6 +115,8 @@ if get_option('decoder')
     subdir('libfaad')
 endif
 
+subdir('cmake')
+
 if get_option('frontend')
     subdir('frontend')
 endif
