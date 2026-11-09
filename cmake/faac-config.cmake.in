@@ -1,0 +1,65 @@
+# Resolve the prefix from this file's location so the install can be moved.
+get_filename_component(PACKAGE_PREFIX_DIR "${CMAKE_CURRENT_LIST_DIR}/@FAAC_PREFIX_REL@" ABSOLUTE)
+
+# Meson records what was built; probing the prefix instead would let a stale
+# library from an earlier install claim a component this build disabled.
+set(_faac_built_components @FAAC_BUILT_COMPONENTS@)
+set(_faac_libm_components @FAAC_LIBM_COMPONENTS@)
+
+if(NOT faac_FIND_COMPONENTS)
+  set(faac_FIND_COMPONENTS ${_faac_built_components})
+endif()
+
+foreach(_faac_c IN LISTS faac_FIND_COMPONENTS)
+  set(faac_${_faac_c}_FOUND FALSE)
+  # list(FIND) rather than IN_LIST, which needs policy CMP0057 (CMake 3.3).
+  list(FIND _faac_built_components ${_faac_c} _faac_built_index)
+  if(_faac_built_index EQUAL -1)
+    continue()
+  endif()
+  if(TARGET faac::${_faac_c})
+    set(faac_${_faac_c}_FOUND TRUE)
+    continue()
+  endif()
+
+  # A prefix may hold both kinds, so FAAC_USE_STATIC_LIBS picks the archive. The
+  # cache variable depends on the mode so flipping the switch re-searches.
+  # lib<name>.a is searched by name as well, in case the platform's static
+  # archives do not use its usual library naming.
+  if(FAAC_USE_STATIC_LIBS)
+    set(_faac_var faac_${_faac_c}_STATIC_LIBRARY)
+    set(_faac_names lib${_faac_c}.a ${_faac_c})
+    set(_faac_saved_suffixes ${CMAKE_FIND_LIBRARY_SUFFIXES})
+    set(CMAKE_FIND_LIBRARY_SUFFIXES .a .lib)
+  else()
+    set(_faac_var faac_${_faac_c}_LIBRARY)
+    set(_faac_names ${_faac_c} lib${_faac_c}.a)
+  endif()
+  find_library(${_faac_var}
+    NAMES ${_faac_names}
+    HINTS "${PACKAGE_PREFIX_DIR}/@FAAC_LIBDIR@"
+    NO_DEFAULT_PATH)
+  if(FAAC_USE_STATIC_LIBS)
+    set(CMAKE_FIND_LIBRARY_SUFFIXES ${_faac_saved_suffixes})
+  endif()
+  set(faac_${_faac_c}_LIBRARY_FOUND "${${_faac_var}}")
+  if(faac_${_faac_c}_LIBRARY_FOUND)
+    add_library(faac::${_faac_c} UNKNOWN IMPORTED)
+    set_target_properties(faac::${_faac_c} PROPERTIES
+      IMPORTED_LOCATION "${faac_${_faac_c}_LIBRARY_FOUND}"
+      INTERFACE_INCLUDE_DIRECTORIES "${PACKAGE_PREFIX_DIR}/@FAAC_INCLUDEDIR@")
+    list(FIND _faac_libm_components ${_faac_c} _faac_libm_index)
+    if(NOT _faac_libm_index EQUAL -1)
+      set_property(TARGET faac::${_faac_c} APPEND PROPERTY INTERFACE_LINK_LIBRARIES m)
+    endif()
+    set(faac_${_faac_c}_FOUND TRUE)
+  endif()
+  mark_as_advanced(${_faac_var})
+endforeach()
+
+foreach(_faac_c IN LISTS faac_FIND_COMPONENTS)
+  if(faac_FIND_REQUIRED_${_faac_c} AND NOT faac_${_faac_c}_FOUND)
+    set(faac_FOUND FALSE)
+    set(faac_NOT_FOUND_MESSAGE "Required component ${_faac_c} was not built or installed")
+  endif()
+endforeach()

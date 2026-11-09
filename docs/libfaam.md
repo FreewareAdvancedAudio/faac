@@ -50,6 +50,12 @@ cc -std=c11 -Wall -Wextra inspect.c -o inspect $(pkg-config --cflags --libs faam
   tree, link from the build directory and add `include/` to the include path.
 - Static linking: `pkg-config --cflags --libs --static faam` plus a static-only
   install or your toolchain's archive selection.
+- CMake: `find_package(faac CONFIG REQUIRED COMPONENTS faam)`, link `faac::faam`
+- CMake, static: add `-DFAAC_USE_STATIC_LIBS=ON` (the default is the shared library)
+- CMake, no package: `pkg_check_modules(LIB REQUIRED IMPORTED_TARGET faam)`, link `PkgConfig::LIB`
+- Meson: `dependency('faam')`; as a subproject, call `subproject('faac')` first or
+  list `faac, faad3, faam, faar` under `[provide]` in `subprojects/faac.wrap`
+- Custom Meson options from CMake: [Building with CMake](libfaac.md#building-with-cmake)
 
 ### Without Meson
 

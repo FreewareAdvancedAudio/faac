@@ -113,6 +113,14 @@ else
     libfaac = libfaac_shared
 endif
 
+# Static libraries do not carry libm, so consumers linking the archive need it too.
+libfaac_dep = declare_dependency(
+    include_directories: inc,
+    link_with: libfaac,
+    dependencies: libm,
+)
+meson.override_dependency('faac', libfaac_dep)
+
 pkgconfig = import('pkgconfig')
 pkgconfig.generate(
     libfaac,
