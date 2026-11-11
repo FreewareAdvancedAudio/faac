@@ -98,7 +98,9 @@ if get_option('encoder') and get_option('decoder') and not meson.is_cross_build(
     test('test_e2e_faad_large_input', find_program('python3'),
         args: [files('test_faad_large_input.py'), faac, faad, get_option('max-channels').to_string()], timeout: 120)
     test('test_e2e_faac_resample_cli', find_program('python3'),
-        args: [files('test_faac_resample_cli.py'), faac, faad], timeout: 120)
+        args: [files('test_faac_resample_cli.py'), faac, faad,
+               (get_option('max-channels') >= 2 and encoder_sbr and
+                get_option('decoder-sbr')).to_string()], timeout: 120)
 endif
 
 if get_option('encoder') and get_option('decoder') and not meson.is_cross_build()

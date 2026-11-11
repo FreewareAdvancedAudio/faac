@@ -90,6 +90,15 @@ def main():
         auto_output = auto_encoded + '.wav'
         run([faad, '--strict', '-q', '-o', auto_output, auto_encoded])
         with wave.open(auto_output, 'rb') as wav:
+            # Low-rate PS is coded at 32 kHz.
+            assert wav.getnchannels() == 2 and wav.getframerate() == 32000
+        # Just above the cutoff PS stays at the input rate.
+        auto_encoded = os.path.join(directory, 'auto-12kbps.m4a')
+        result = run([faac, '--object-type', 'auto', '-b', '12', '-o', auto_encoded, source])
+        assert b'HE-AAC v2' in result.stderr, result.stderr.decode(errors='replace')
+        auto_output = auto_encoded + '.wav'
+        run([faad, '--strict', '-q', '-o', auto_output, auto_encoded])
+        with wave.open(auto_output, 'rb') as wav:
             assert wav.getnchannels() == 2 and wav.getframerate() == 48000
     print('PS frontend: ok')
 
