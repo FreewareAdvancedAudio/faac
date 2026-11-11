@@ -646,6 +646,10 @@ int run_encoding_session_ext(const encode_options_t *opts,
            10 kbps/ch at 44.1k, not at 20 and 12; bracket centers. */
         const uint32_t lc_48k_bps = 19000;
         const uint32_t lc_44k_bps = 11000;
+        /* Stereo HE-AAC gains on most clips at 32 kHz through 5 kbps/ch, not at
+           6: the core gets more bits per sample than the band above 16 kHz is
+           worth. */
+        const uint32_t he_48k_bps = 5000;
         if (raw_sample_rate > 48000)
             target_rate = (raw_sample_rate % 44100 == 0) ? 44100 : 48000;
         else if (raw_sample_rate > 32000 &&
@@ -662,6 +666,16 @@ int run_encoding_session_ext(const encode_options_t *opts,
                 target_rate = 32000;
                 /* Keep AUTO from switching to HE at the new rate. */
                 params.object_type = FAAC_OBJ_LC;
+            }
+            else if (num_channels == 2 && raw_sample_rate == 48000 &&
+                     rate_per_channel <= he_48k_bps &&
+                     (native_type == FAAC_OBJ_HE_AAC_V1 ||
+                      native_type == FAAC_OBJ_HE_AAC_V2))
+            {
+                target_rate = 32000;
+                /* AUTO's PS ceiling differs at 32 kHz; keep the profile chosen
+                   at the input rate. */
+                params.object_type = native_type;
             }
         }
         sample_rate = target_rate;

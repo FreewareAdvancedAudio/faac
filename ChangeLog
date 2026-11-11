@@ -20,7 +20,8 @@ Unreleased
 	* Automatic resampling: --rate auto (default), keep or <Hz>. In ABR and CBR
 	  input above 48 kHz goes to 44.1 or 48 kHz and 44.1/48 kHz input goes to
 	  32 kHz at very low bitrates when the encoder resolves to AAC-LC
-	  (--profile lc or an LC-only build). --rate keep
+	  (--profile lc or an LC-only build); 48 kHz stereo input also goes to
+	  32 kHz up to 10 kbps total when it resolves to HE-AAC. --rate keep
 	  turns it off; the MP4 tag records the mapping. VBR keeps the input
 	  rate, capped at 96 kHz. faar takes --quality
 	  fast|good|high, --dither none|tpdf|shaped and -D<n>, with output rates
