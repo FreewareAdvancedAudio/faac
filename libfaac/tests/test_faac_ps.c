@@ -24,6 +24,7 @@
 #include "sbr_internal.h"
 #include "bitstream.h"
 #include "ps.h"
+#include "ps_huff_tables.h"
 #include "fft.h"
 #include "stats.h"
 
@@ -52,9 +53,51 @@ static int write_checked(const SbrFrameData *fd, const PsRef *ref, int offset)
     return count;
 }
 
+/* The IID mode field of the PS header: bits 3..1 of the first byte. */
+static int emitted_iid_mode(const SbrFrameData *fd, const PsRef *ref)
+{
+    unsigned char data[512] = {0};
+    BitStream bs;
+    InitBitStream(&bs, data, sizeof(data));
+    PsWrite(fd, &bs, ref);
+    return (data[0] >> 1) & 7;
+}
+
+static int get_bit(const unsigned char *d, int pos) { return (d[pos >> 3] >> (7 - (pos & 7))) & 1; }
+
+/* Decode one frequency-coded IID envelope (after the 12 header bits) with the packed
+ * table by prefix match, so a wrong codeword or length shows up as a wrong delta. */
+static void decode_df_iid(const unsigned char *d, int bands, const PsHuffPackedEntry *table,
+                          int nsyms, int offset, int8_t *out)
+{
+    int pos = 12;
+    assert(get_bit(d, pos++) == 0); /* iid_dt = 0 */
+    int prev = 0;
+    for (int b = 0; b < bands; b++) {
+        int found = -1;
+        for (int sym = 0; sym < nsyms && found < 0; sym++) {
+            int len = table[sym].byte[0] & 31;
+            uint32_t code = ((uint32_t)table[sym].byte[0] | ((uint32_t)table[sym].byte[1] << 8) |
+                             ((uint32_t)table[sym].byte[2] << 16)) >> 5;
+            uint32_t got = 0;
+            for (int i = 0; i < len; i++)
+                got = (got << 1) | get_bit(d, pos + i);
+            if (got == code) {
+                found = sym;
+                pos += len;
+            }
+        }
+        assert(found >= 0);
+        prev += found - offset;
+        out[b] = (int8_t)prev;
+    }
+}
+
 static void test_ps_write(void)
 {
     SbrFrameData fd = {0};
+    fd.ps_send_header = 1;
+    fd.ps_ext = 1;
 
     for (int band_mode = 0; band_mode <= 1; band_mode++) {
         fd.ps_band_mode = band_mode;
@@ -171,6 +214,32 @@ static void test_ps_write(void)
         fd.enable_icc = 1;
         int icc_on = write_checked(&fd, &ref, 0);
         assert(icc_on > icc_off);
+
+        /* Fine IID encoding check: the payload decodes back to what was written. */
+        fd.enable_icc = 0;
+        fd.enable_phase = 0;
+        for (int b = 0; b < PS_BANDS; b++) {
+            fd.iid[b] = (b & 1) ? 7 : -7;
+            ref.iid[b] = fd.iid[b];
+        }
+        /* iid_mode 3 and 4 are the fine grid. */
+        assert(emitted_iid_mode(&fd, NULL) == 3 + band_mode);
+        int bands = band_mode ? PS_BANDS : PS_LOW_BANDS;
+        fd.ps_num_env = 1;
+        {
+            unsigned char data[512] = {0};
+            BitStream bs;
+            InitBitStream(&bs, data, sizeof(data));
+            PsWrite(&fd, &bs, NULL);
+            int8_t back[PS_BANDS] = {0};
+            decode_df_iid(data, bands, faac_ps_huff_iid_df_fine_packed,
+                          PS_HUFF_IID_DF_FINE_NSYMS, PS_HUFF_IID_DF_FINE_OFFSET, back);
+            assert(memcmp(back, fd.iid, bands) == 0);
+        }
+        int fine_with_ref = write_checked(&fd, &ref, 0);
+        int fine_without_ref = write_checked(&fd, NULL, 0);
+        assert(fine_with_ref < fine_without_ref);
+        fd.enable_phase = 1;
     }
 }
 
@@ -374,6 +443,59 @@ static void test_carrier_blend(void)
     assert(pure_time && pure_spectral && mixed);
 }
 
+/* A drain payload carries no header, so it must restate whatever the decoder holds. */
+static void test_silence_holds_state(void)
+{
+    SBRInfo sbr = {0};
+    sbr.psPred.valid = 1;
+    sbr.psPred.band_mode = 1;
+    sbr.psPred.icc_on = 1;
+    sbr.psPred.ext_on = 1;
+    SbrFrameData fd = {0};
+    fd.enable_phase = 1;
+    fd.ps_send_header = 1;
+    PsNoteSilence(&sbr, &fd);
+    assert(fd.ps_band_mode == 1);
+    assert(fd.enable_icc == 1 && fd.ps_ext == 1);
+    assert(fd.enable_phase == 0 && fd.ps_send_header == 0);
+    assert(sbr.psPred.valid && sbr.psPred.band_mode == 1 && sbr.psPred.icc_on == 1);
+    assert(sbr.psAnalyzed == 1);
+}
+
+/* A frame without a header restates nothing: the flag is clear and the saved bits are real. */
+static void test_ps_header_omission(void)
+{
+    SbrFrameData fd = {0};
+    fd.ps_num_env = 1;
+    fd.enable_icc = 1;
+    fd.ps_ext = 1;
+    for (int b = 0; b < PS_BANDS; b++) {
+        fd.iid[b] = (b % 5) - 2;
+        fd.icc[b] = b % 3;
+    }
+    for (int band_mode = 0; band_mode <= 1; band_mode++) {
+        fd.ps_band_mode = band_mode;
+        unsigned char with[512] = {0}, without[512] = {0};
+        BitStream bs;
+        fd.ps_send_header = 1;
+        InitBitStream(&bs, with, sizeof(with));
+        int bits_with = PsWrite(&fd, &bs, NULL);
+        fd.ps_send_header = 0;
+        InitBitStream(&bs, without, sizeof(without));
+        int bits_without = PsWrite(&fd, &bs, NULL);
+        assert(((with[0] >> 5) & 1) == 1);
+        assert(((without[0] >> 5) & 1) == 0);
+        /* Header: iid enable+mode (5), ICC mode (3), ext flag (1) = 9 bits, before byte padding. */
+        assert(bits_with - bits_without >= 8 && bits_with - bits_without <= 16);
+
+        /* The extension off drops its size field and body (a byte at least). */
+        SbrFrameData off = fd;
+        off.ps_ext = 0;
+        off.enable_phase = 0;
+        assert(PsWrite(&off, &bs, NULL) + 8 <= bits_without);
+    }
+}
+
 /* Counting passes and CBR retries must keep the previous access unit intact. */
 static void test_extension_retry(void)
 {
@@ -382,6 +504,8 @@ static void test_extension_retry(void)
     fd.ps_num_env = 2;
     fd.enable_icc = 1;
     fd.enable_phase = 1;
+    fd.ps_ext = 1;
+    fd.ps_send_header = 1;
     for (int band_mode = 0; band_mode <= 1; band_mode++) {
         fd.ps_band_mode = band_mode;
         for (int b = 0; b < PS_BANDS; b++) {
@@ -419,6 +543,8 @@ int main(void)
 {
     fft_init();
     test_ps_write();
+    test_silence_holds_state();
+    test_ps_header_omission();
     test_extension_retry();
     test_spectral_carrier();
     test_spectral_reference();
