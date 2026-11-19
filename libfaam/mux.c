@@ -20,7 +20,7 @@
 
 #include <stdio.h>
 #include "libfaam_internal.h"
-#include "endian.h"
+#include "faac_endian.h"
 
 enum {
     MP4_EPOCH_OFFSET = 2082844800,

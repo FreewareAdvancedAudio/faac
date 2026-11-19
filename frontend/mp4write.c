@@ -34,7 +34,7 @@
 #include "faam.h"
 #include "cli_io.h"
 #include "mp4write.h"
-#include "endian.h"
+#include "faac_endian.h"
 #include "cover_art.h"
 #ifdef _WIN32
 #include "charset.h"

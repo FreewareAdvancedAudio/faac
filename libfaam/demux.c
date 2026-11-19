@@ -20,7 +20,7 @@
 
 #include <stdio.h>
 #include <inttypes.h>
-#include "endian.h"
+#include "faac_endian.h"
 #include "libfaam_internal.h"
 
 /* Borrowed views into moov, valid only while constructing the sample index. */

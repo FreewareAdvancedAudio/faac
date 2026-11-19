@@ -19,7 +19,7 @@
  * in-place updater so every reader sees the same chapters.
  */
 
-#include "endian.h"
+#include "faac_endian.h"
 #include "libfaam_internal.h"
 
 

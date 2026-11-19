@@ -15,7 +15,7 @@
 
 /* Shared ilst serialization keeps frontend and retrofit tag layouts aligned. */
 #include <stdio.h>
-#include "endian.h"
+#include "faac_endian.h"
 #include "libfaam_internal.h"
 
 #define FREEFORM_KEY FAAM_FOURCC('-', '-', '-', '-')

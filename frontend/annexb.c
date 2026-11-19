@@ -17,7 +17,7 @@
 #include <string.h>
 
 #include "annexb.h"
-#include "endian.h"
+#include "faac_endian.h"
 
 /* Finds the next NAL unit at or after *pos. nal is its first byte (the header), without the
    start code and without the zero bytes that pad it before the next one. *pos moves to the

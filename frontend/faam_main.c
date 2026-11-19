@@ -50,7 +50,7 @@
 #include "cli_parse.h"
 #include "charset.h"
 #include "help.h"
-#include "endian.h"
+#include "faac_endian.h"
 #include "asc_codec.h"
 #include "cover_art.h"
 #include "encoder_quirks.h"
