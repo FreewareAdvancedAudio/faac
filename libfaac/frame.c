@@ -32,7 +32,7 @@
 #include "sbr.h"
 #include "ratecontrol.h"
 #include "atomic.h"
-#include "endian.h"
+#include "faac_endian.h"
 
 /* HE-AAC auto-mode thresholds; measured with ViSQOL and Zimtohrli. */
 #define HE_MIN_SAMPLE_RATE    32000  /* Fs/2 < 16 kHz below this → core too narrow for SBR */

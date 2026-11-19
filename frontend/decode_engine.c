@@ -37,7 +37,7 @@
 #include "charset.h"
 #include "cli_io.h"
 #include "bits.h"
-#include "endian.h"
+#include "faac_endian.h"
 #include "asc_codec.h"
 #include "mp4read.h"
 #include "decode_engine.h"

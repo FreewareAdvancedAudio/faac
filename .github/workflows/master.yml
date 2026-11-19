@@ -331,6 +331,59 @@ jobs:
           name: faac-${{ github.sha }}-${{ matrix.config.name }}
           path: temp/*
 
+  uclibc:
+    name: Linux GCC (uClibc-ng)
+    runs-on: ubuntu-latest
+    env:
+      # One pin drives the download URL and the cache key.
+      UCLIBC_TOOLCHAIN: x86-64-core-i7--uclibc--stable-2026.08-1
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build xz-utils
+
+      - name: Restore toolchain
+        id: toolchain
+        uses: actions/cache@v6
+        with:
+          path: toolchain
+          key: ${{ env.UCLIBC_TOOLCHAIN }}
+
+      - name: Download toolchain
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL "https://toolchains.bootlin.com/downloads/releases/toolchains/x86-64-core-i7/tarballs/$UCLIBC_TOOLCHAIN.tar.xz" -o toolchain.tar.xz
+          mkdir toolchain
+          tar -xf toolchain.tar.xz -C toolchain --strip-components=1
+
+      # gcc-ar, not ar, so static archives keep their LTO symbol index.
+      - name: Build and test
+        run: |
+          echo "$PWD/toolchain/bin" >> "$GITHUB_PATH"
+          export PATH="$PWD/toolchain/bin:$PATH"
+          cat > uclibc.ini <<'EOF'
+          [binaries]
+          c = 'x86_64-linux-gcc'
+          ar = 'x86_64-linux-gcc-ar'
+          strip = 'x86_64-linux-strip'
+          [built-in options]
+          c_link_args = ['-static']
+          [host_machine]
+          system = 'linux'
+          cpu_family = 'x86_64'
+          cpu = 'x86_64'
+          endian = 'little'
+          [properties]
+          needs_exe_wrapper = false
+          EOF
+          meson setup build --cross-file uclibc.ini -Ddefault_library=static
+          meson compile -C build
+          meson test -C build --print-errorlogs
+
   fuzz-build:
     name: Fuzz harness build
     runs-on: ubuntu-latest

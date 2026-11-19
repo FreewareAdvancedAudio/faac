@@ -26,8 +26,13 @@
 
 static double wall_seconds(void) {
     struct timespec ts;
+#ifdef _WIN32
     if (timespec_get(&ts, TIME_UTC) != TIME_UTC)
         return 0.0;
+#else
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0.0;
+#endif
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 

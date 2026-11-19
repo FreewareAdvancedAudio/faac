@@ -30,7 +30,7 @@
 #include "faac.h"
 #include "faad3.h"
 #include "faad_internal.h"
-#include "endian.h"
+#include "faac_endian.h"
 
 #define RATE     44100
 #ifndef FAAD_TEST_SECONDS

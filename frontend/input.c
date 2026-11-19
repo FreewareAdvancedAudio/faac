@@ -25,7 +25,7 @@
 #include "input.h"
 #include "cli_io.h"
 #include "charset.h"
-#include "endian.h"
+#include "faac_endian.h"
 
 #define PCM_32BIT_FLOAT_SCALE 2147483648.0f
 #define INPUT_IO_BUFSIZE 65536

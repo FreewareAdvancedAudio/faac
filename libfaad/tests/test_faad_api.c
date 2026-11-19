@@ -15,7 +15,7 @@
 
 /* Public ABI and packet-boundary regressions. No encoder dependency. */
 #include "faad_internal.h"
-#include "endian.h"
+#include "faac_endian.h"
 #undef NDEBUG
 #include <assert.h>
 #include <math.h>

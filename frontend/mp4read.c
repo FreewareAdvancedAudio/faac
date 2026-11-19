@@ -30,7 +30,7 @@
 #include "cli_io.h"
 #include "charset.h"
 #include "encoder_quirks.h"
-#include "endian.h"
+#include "faac_endian.h"
 
 typedef struct {
     const uint8_t *buf;

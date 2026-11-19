@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "endian.h"
+#include "faac_endian.h"
 
 int main(void)
 {
