@@ -1,6 +1,25 @@
-Unreleased
+3.0 (Nov 18, 2026)
 
 	[ Nils Schimmelmann ]
+	* libfaac ABI 3: faac_params takes a whole-stream bitrate with explicit
+	  ABR, VBR and CBR modes, channels, stereo_mode, stream_format
+	  (including MPEG-2 ADTS) and channel layouts; faac_encoder_info
+	  carries the AudioSpecificConfig; float input is unity full scale;
+	  faac_library_info reports SBR and PS through flags. Each shared
+	  library now has its own ABI version, separate from the release. Code
+	  built for ABI 2 recompiles but misbehaves: a per-channel bit_rate
+	  encodes at 1/N of the rate and old-scale float input encodes as silence
+	* -q values are not comparable with 2.2: the same -q now gives a
+	  different bitrate
+	* faad reads channelConfiguration 7 as 7.1 wide (centre, FLC/FRC, FL/FR,
+	  surrounds, LFE), as Apple's decoder and FDK's do; FFmpeg reads it as
+	  front, side and back pairs unless run with -strict 1, and FAAD2 returns
+	  the pairs in stream order labelled front, side and back (the faad2 shim
+	  reports those labels).
+	  Eight-channel streams from 2.2 and earlier used configuration 7 and
+	  coded the input's BL BR as the second pair and SL SR as the third, so
+	  they come out with the pairs moved; encode 7.1 again from the source
+	  instead of relying on the channel order of old streams
 	* New decoder libfaad and faad: a complete rewrite from the FAAC codebase
 	  (not derived from FAAD2), LGPL-2.1-or-later, with its own libfaad3 API;
 	  faad reports DAB+ support in FAAD_LIB_DAB
@@ -26,16 +45,19 @@ Unreleased
 	  rate, capped at 96 kHz. faar takes --quality
 	  fast|good|high, --dither none|tpdf|shaped and -D<n>, with output rates
 	  7350-192000 Hz; input above 48 kHz is resampled with high
-	* libfaac ABI 3: faac_params takes a whole-stream bitrate with explicit
-	  ABR, VBR and CBR modes, channels, stereo_mode, stream_format
-	  (including MPEG-2 ADTS) and channel layouts; faac_encoder_info
-	  carries the AudioSpecificConfig; float input is unity full scale;
-	  faac_library_info reports SBR and PS through flags. Each shared
-	  library now has its own ABI version, separate from the release. Code
-	  built for ABI 2 recompiles but misbehaves: a per-channel bit_rate
-	  encodes at 1/N of the rate and old-scale float input encodes as silence
-	* -q values are not comparable with 2.2: the same -q now gives a
-	  different bitrate
+	* Filter bank: AAC-LC long windows use a Kaiser-Bessel Derived window
+	  again instead of the sine window, to cut spectral leakage from loud
+	  low-frequency tones into the broadband noise floor (bass-heavy intros at
+	  high quality); short windows, LFE channels and the HE-AAC core keep sine
+	* Encoder retunes: stereo masking and M/S selection, short-window onset
+	  targets (less pre-echo), SBR envelopes and transient borders, and the
+	  HE-AAC auto ceiling
+	* CBR carries the fraction of a bit when the rate is not a whole number of
+	  bits per frame, so the decoder buffer no longer drifts on long streams
+	* Every frame now fits its cap: the CBR reservoir, `--cap-rate` and the ISO
+	  frame limit. A frame still too big at minimum quality drops its top bands
+	  instead of being written over the limit; only a cap below an empty frame
+	  (about 290 bits stereo LC, 470 HE) can be exceeded
 	* Dynamic range control: faac --drc <profile> writes dynamic_range_info
 	  from the input's K-weighted loudness (profiles: film, film-light,
 	  music, music-light, speech; --drc-ref-level sets the program level);
@@ -44,12 +66,6 @@ Unreleased
 	  percent and --drc-target-level in dBFS; libfaad uses dBFS for
 	  drc_target_level and drc_ref_level, and faad -i prints the stream's
 	  reference level
-	* Eight-channel streams are signalled with a program config element in
-	  the AudioSpecificConfig and in every 32nd ADTS frame; faad and faam
-	  read them
-	* faac warns when a WAVE_FORMAT_EXTENSIBLE file's channel mask is not the
-	  order it reads (quad or 6.0, for example) and rejects 7-channel input
-	  with a clear message; encoded output is unchanged
 	* faad puts FFmpeg's and Apple's 5.1, 6.1, 7.0 and 7.1 PCE streams, fdkaac's
 	  7.1 and channelConfiguration 11 and 12 streams in WAVE order with the
 	  matching channel mask from the first frame, and keeps the order when a
@@ -57,32 +73,31 @@ Unreleased
 	  swap until a PCE arrives); configurations 11 and 12 were refused before,
 	  and the frames of a stream before its first PCE decoded as noise on the
 	  pair channels
-	* faad reads channelConfiguration 7 as 7.1 wide (centre, FLC/FRC, FL/FR,
-	  surrounds, LFE), as Apple's decoder and FDK's do; FFmpeg reads it as
-	  front, side and back pairs unless run with -strict 1, and FAAD2 returns
-	  the pairs in stream order labelled front, side and back (the faad2 shim
-	  reports those labels).
-	  Eight-channel streams from 2.2 and earlier used configuration 7 and
-	  coded the input's BL BR as the second pair and SL SR as the third, so
-	  they come out with the pairs moved; encode 7.1 again from the source
-	  instead of relying on the channel order of old streams
-	* Filter bank: AAC-LC long windows use a Kaiser-Bessel Derived window
-	  again instead of the sine window, to cut spectral leakage from loud
-	  low-frequency tones into the broadband noise floor (bass-heavy intros at
-	  high quality); short windows, LFE channels and the HE-AAC core keep sine
-	* Encoder retunes: stereo masking and M/S selection, short-window onset
-	  targets (less pre-echo), SBR envelopes and transient borders, and the
-	  HE-AAC auto ceiling
-	* frontend: the MP4 encoder tag (©too) records rate or mode, profile and
-	  cutoff always, and resampling, M/S, TNS, PNS and the other settings only
-	  when they differ from the defaults; --no-encoder-info omits it.
-	  Initialize console code page to UTF-8 on Windows; align option help
-	  columns; handle 5.0 and 7.1 channel ordering
+	* Eight-channel streams are signalled with a program config element in
+	  the AudioSpecificConfig and in every 32nd ADTS frame; faad and faam
+	  read them
+	* faac warns when a WAVE_FORMAT_EXTENSIBLE file's channel mask is not the
+	  order it reads (quad or 6.0, for example) and rejects 7-channel input
+	  with a clear message; encoded output is unchanged
+	* faad --downmix also folds to 3.0, 4.0, 5.0 and 5.1 layouts, in addition
+	  to mono and stereo; libfaad takes the target's WAVE speaker mask
+	* Gapless: faad and faam trim by iTunSMPB or, without it, by the edit list
+	  and the decoded sample count; Nero HE-AAC priming is read without the
+	  decoder delay and FAAC 1.x priming is inferred from the encoder tag
+	* libfaam: chapters (chpl plus a QuickTime text track), built out with
+	  -Dmuxer-chapters=false, and custom tags are copied
+	* libfaam edits the first moov of a file that has several, the one other
+	  readers parse, instead of the last
 	* frontend tags: added generic typed metadata entries (faam_metadata_entry)
 	  to faam and faac, supporting lyrics (--lyrics, --lyrics-file), grouping
 	  (--grouping), copyright (--copyright), description (--description),
 	  work (--work), movement (--movement), and BPM (--bpm) tags, with ID3v1
 	  genre text mapping
+	* frontend: the MP4 encoder tag (©too) records rate or mode, profile and
+	  cutoff always, and resampling, M/S, TNS, PNS and the other settings only
+	  when they differ from the defaults; --no-encoder-info omits it.
+	  Initialize console code page to UTF-8 on Windows; align option help
+	  columns; handle 5.0 and 7.1 channel ordering
 	* frontend I/O & pipes: incremental WAV and RF64 header reading, float PCM
 	  support in either byte order, --faststart for MP4 moov positioning,
 	  hardened MP4 pipe handling, and error reporting on stream failure
@@ -91,19 +106,14 @@ Unreleased
 	  display across faac, faad, faam and faar; progress callbacks throttled
 	  to ~30 Hz with %7.1f bitrate formatting; name build options when
 	  compiled-out features are requested
-	* Gapless: faad and faam trim by iTunSMPB or, without it, by the edit list
-	  and the decoded sample count; Nero HE-AAC priming is read without the
-	  decoder delay and FAAC 1.x priming is inferred from the encoder tag
-	* libfaam: chapters (chpl plus a QuickTime text track), built out with
-	  -Dmuxer-chapters=false, and custom tags are copied
+	* CLI options modernized with the old names kept as aliases; --tag accepts
+	  = as a separator; ADTS stream info is reported after the first frame
 	* High-resolution VBR improved above 48 kHz; the SBR stop frequency stays
 	  above the start frequency at 64 kHz and up; LFE channels stay on long
 	  windows
 	* Hardening: the encoder API and WAV reader reject hostile input,
 	  allocation failures are handled, and a request for more channels than
 	  the build supports is refused
-	* CLI options modernized with the old names kept as aliases; --tag accepts
-	  = as a separator; ADTS stream info is reported after the first frame
 	* libfaad: faster S16 output and SBR windows with bit-exact output: ~21%
 	  (AAC-LC) and ~26% (HE-AAC v1) faster on an ESP32-S3, ~10% less CPU time
 	  on x86-64 at -O2 and unchanged at -O3
@@ -149,12 +159,6 @@ Unreleased
 	  `--block-type` now reject unknown values instead of reading them as 0
 	* Rate control: signed bit account for ABR; a real bit reservoir for CBR
 	  behind `--cbr`
-	* CBR carries the fraction of a bit when the rate is not a whole number of
-	  bits per frame, so the decoder buffer no longer drifts on long streams
-	* Every frame now fits its cap: the CBR reservoir, `--cap-rate` and the ISO
-	  frame limit. A frame still too big at minimum quality drops its top bands
-	  instead of being written over the limit; only a cap below an empty frame
-	  (about 290 bits stereo LC, 470 HE) can be exceeded
 	* Refit the ABR bandwidth curve from a sweep: a wider core at 24-56 kbps
 	  stereo and every cutoff on the band grid reachable, where a double
 	  snap had left seven
