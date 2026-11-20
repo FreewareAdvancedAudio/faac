@@ -94,9 +94,13 @@ else
     add_project_arguments('-include', meson.current_build_dir() / 'config.h', language: 'c')
 endif
 
+# sqrtf() inlines to one instruction only when it need not set errno. Nothing
+# here reads errno after a math call, so drop it: otherwise every coefficient
+# of the scalar quantizer (no SSE2 path) calls into libm.
 extra_args = cc.get_supported_arguments([
     '-Werror=unused-parameter',
     '/we4100',
+    '-fno-math-errno',
 ])
 add_project_arguments(extra_args, language: 'c')
 

@@ -31,9 +31,10 @@ typedef int (*QuantizeFunc)(const float * __restrict xr, int * __restrict xi, in
 extern int quantize_sse2(const float * __restrict xr, int * __restrict xi, int n4, float sfacfix);
 #endif
 
-/* Written so the loop auto-vectorizes: fabsf() makes the sqrtf() argument
- * provably non-negative (no errno path), the sign is re-applied as a
- * two's-complement mask, and the width is a known multiple of four. */
+/* Written so the loop auto-vectorizes: sqrtf() inlines only because the build
+ * passes -fno-math-errno (the outer argument can be NaN, so fabsf() alone does
+ * not remove the libm call), the sign is re-applied as a two's-complement
+ * mask, and the width is a known multiple of four. */
 static int quantize_scalar(const float * __restrict xr, int * __restrict xi, int n4, float sfacfix)
 {
     int i, maxq = 0;
