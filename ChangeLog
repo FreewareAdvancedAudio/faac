@@ -7,6 +7,10 @@ Unreleased
 	* libfaac.a no longer carries the SSE2 quantizer as compiler bytecode, so
 	  a program linking the installed static library with another compiler
 	  no longer fails with an undefined quantize_sse2
+	* The encoder builds with -fno-math-errno, so sqrtf() inlines instead of
+	  calling libm: on targets without the SSE2 quantizer (ARM, MIPS) the
+	  quantizer was several times slower, most of all on uClibc-ng. Output
+	  is unchanged
 
 3.0 (Nov 18, 2026)
 

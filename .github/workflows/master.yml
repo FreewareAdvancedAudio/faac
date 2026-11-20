@@ -384,6 +384,13 @@ jobs:
           meson compile -C build
           meson test -C build --print-errorlogs
 
+      # Without -fno-math-errno the scalar quantizer calls libm's software
+      # sqrtf here, several times slower on targets without an SSE2 path.
+      - name: Check sqrtf is inlined
+        run: |
+          export PATH="$PWD/toolchain/bin:$PATH"
+          ! x86_64-linux-nm build/frontend/faac | grep -E ' sqrtf(@.*)?$'
+
   fuzz-build:
     name: Fuzz harness build
     runs-on: ubuntu-latest
