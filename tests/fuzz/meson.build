@@ -80,7 +80,8 @@ harnesses = [
      'args': faam_args + fe_args, 'deps': fe_deps},
     # The harness uses memfd_create().
     {'name': 'frontend_wav', 'libs': ['fe'], 'args': fe_args,
-     'when': frontend_enabled and host_machine.system() == 'linux',
+     'when': frontend_enabled and cc.has_function('memfd_create',
+         prefix: '#define _GNU_SOURCE\n#include <sys/mman.h>'),
      'inc': fe_inc, 'deps': fe_deps,
      'max_len': 4096},
     {'name': 'frontend_adts_header', 'libs': [], 'when': frontend_enabled,
