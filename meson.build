@@ -105,6 +105,28 @@ extra_args = cc.get_supported_arguments([
 add_project_arguments(extra_args, language: 'c')
 
 inc = include_directories('include')
+# Scale test time limits for slow targets. A test setup marked as default also
+# applies to a plain `meson test`, which is what packaging builds run, and it
+# covers tests that rely on Meson's 30 s default as well as explicit timeouts.
+test_timeout_multiplier = get_option('test-timeout-multiplier')
+if test_timeout_multiplier == 0
+    fast_cpu = host_machine.cpu_family() in ['x86', 'x86_64', 'arm', 'aarch64', 'ppc64', 'loongarch64']
+    # Binaries run under an emulator (qemu-user) are slow whatever their CPU.
+    emulated = meson.is_cross_build() and meson.can_run_host_binaries() and host_machine.cpu_family() != build_machine.cpu_family()
+    if fast_cpu and host_machine.endian() == 'little' and host_machine.system() != 'gnu' and not emulated
+        test_timeout_multiplier = 1
+    else
+        test_timeout_multiplier = 10
+    endif
+endif
+# A subproject must not claim the default setup: Meson allows one per build.
+if test_timeout_multiplier > 1 and not meson.is_subproject()
+    add_test_setup('scaled_timeouts',
+        timeout_multiplier: test_timeout_multiplier,
+        env: {'FAAC_TEST_TIMEOUT_SCALE': test_timeout_multiplier.to_string()},
+        is_default: true)
+endif
+
 subdir('docs')
 subdir('include')
 subdir('common')

@@ -65,6 +65,7 @@ meson install -C build
 | `resampler-float` | false | Use the float-only resampler engine for FPU-less targets; the default mixed build uses double at High quality |
 | `sbr-decimation` | 1 | Encoder Spectral Band Replication analysis density (1 = full quality, up to 8 = faster) |
 | `stats` | false | End-of-stream diagnostics on stderr (instrumentation only) |
+| `test-timeout-multiplier` | 0 | Scale every test time limit; 0 picks 1 on fast little-endian CPUs and 10 on other, emulated or GNU/Hurd targets |
 
 ## Library APIs
 
