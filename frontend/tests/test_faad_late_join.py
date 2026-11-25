@@ -25,6 +25,8 @@ import sys
 import tempfile
 import wave
 
+import harness
+
 
 def write_wav(path, rate, seconds):
     with wave.open(path, 'wb') as w:
@@ -77,8 +79,8 @@ def main():
             r = subprocess.run([faad, '-o', out, cut], capture_output=True)
             assert r.returncode == 0, (skip, r.stderr.decode(errors='replace'))
             got = wav_info(out)
-            assert got[:2] == (rate, channels), (skip, got)
-            assert got[2] >= (len(frames) - skip - 1) * 2048, (skip, got)
+            assert got[:2] == (rate, channels), (skip, got, r.stderr.decode(errors='replace'))
+            assert got[2] >= (len(frames) - skip - 1) * 2048, (skip, got, r.stderr.decode(errors='replace'))
         if with_ps:
             ps = os.path.join(d, 'ps.aac')
             r = subprocess.run([faac, '--profile', 'he-v2', '-b', '24', '--stream-format', 'adts',

@@ -26,6 +26,8 @@ import sys
 import tempfile
 import wave
 
+import harness
+
 
 faac, faad = map(os.path.abspath, sys.argv[1:3])
 he_stereo = sys.argv[3] == "true"

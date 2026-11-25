@@ -33,11 +33,17 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import wave
 
+import harness
+
 failures = []
 checks = 0
+
+# One CLI invocation never legitimately takes this long, even on a slow target.
+COMMAND_TIMEOUT = harness.scaled(120)
 
 
 def check(cond, what):
@@ -76,7 +82,14 @@ class Tools:
         e.pop("SOURCE_DATE_EPOCH", None)
         if env:
             e.update(env)
-        r = subprocess.run([exe] + list(args), cwd=cwd, env=e, input=input_data, capture_output=True)
+        try:
+            r = subprocess.run([exe] + list(args), cwd=cwd, env=e, input=input_data,
+                               capture_output=True, timeout=COMMAND_TIMEOUT)
+        except subprocess.TimeoutExpired as exc:
+            # Name the stuck command instead of letting the harness kill the
+            # whole test with no output.
+            check(False, f"timed out after {COMMAND_TIMEOUT}s: {os.path.basename(exe)} {' '.join(map(str, args))}")
+            r = subprocess.CompletedProcess(exc.cmd, 124, exc.stdout or b"", exc.stderr or b"")
         # a sanitizer build reports through stderr; an expected-failure exit code would hide it
         if re.search(rb"AddressSanitizer|runtime error:|LeakSanitizer", r.stderr):
             check(False, f"sanitizer report from {os.path.basename(exe)} {' '.join(args)}")
@@ -600,10 +613,31 @@ def run_all(t, d):
             env.pop("SOURCE_DATE_EPOCH", None)
             proc = subprocess.Popen([t.faam] + fragment_args, cwd=d, env=env,
                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            proc.stdin.write(read(os.path.join(d, "lc.aac")))
-            proc.stdin.flush()
+            harness.shrink_pipe(proc.stdin, proc.stdout)
+            aac_data = read(os.path.join(d, "lc.aac"))
+            # The feeder owns stdin outright: nothing else may touch it, or it
+            # can wait on the buffered writer's lock while the feeder is blocked
+            # writing into a pipe the child is not draining. It keeps stdin open
+            # until released, which is what proves a fragment arrives before EOF.
+            stdin, proc.stdin = proc.stdin, None
+            release = threading.Event()
+
+            def feed():
+                try:
+                    stdin.write(aac_data)
+                    stdin.flush()
+                    release.wait(harness.scaled(30))
+                except (OSError, ValueError):
+                    pass
+                finally:
+                    try:
+                        stdin.close()
+                    except (OSError, ValueError):
+                        pass
+            feeder = threading.Thread(target=feed, daemon=True)
+            feeder.start()
             early = bytearray()
-            deadline = time.monotonic() + 3
+            deadline = time.monotonic() + harness.scaled(3)
             while b"moof" not in early and time.monotonic() < deadline:
                 ready, _, _ = select.select([proc.stdout], [], [], deadline - time.monotonic())
                 if not ready:
@@ -612,10 +646,17 @@ def run_all(t, d):
                 if not chunk:
                     break
                 early.extend(chunk)
-            proc.stdin.close()
-            rest = proc.stdout.read()
-            err = proc.stderr.read()
-            code = proc.wait()
+            release.set()
+            # communicate() now only drains stdout and stderr, so the child keeps
+            # flowing and the feeder's write completes.
+            try:
+                rest, err = proc.communicate(timeout=harness.scaled(30))
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                rest, err = proc.communicate()
+                check(False, "fragmented mux did not finish after stdin reached EOF")
+            feeder.join(timeout=harness.scaled(5))
+            code = proc.returncode
             check(code == 0 and early.startswith(b"\0\0\0\x20ftyp") and b"moof" in early and
                   bytes(early) + rest == fragmented.stdout,
                   f"fragmented mux emits a complete fragment before stdin reaches EOF ({err!r})")

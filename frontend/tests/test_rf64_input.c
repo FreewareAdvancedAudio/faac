@@ -16,6 +16,7 @@
 /* Exercise RF64 chunk traversal directly, without invoking the encoder CLI. */
 #include "input.h"
 #include "cli_io.h"
+#include "sparse_probe.h"
 #include <string.h>
 
 static bool write_u16(FILE *f, uint16_t value)
@@ -133,6 +134,11 @@ int main(int argc, char **argv)
     if (!ok) fprintf(stderr, "float endian check failed\n");
     if (ok) ok = check_fixture(argv[1], 4, 0);
 #ifndef _WIN32
+    if (ok && !sparse_files_supported(argv[1])) {
+        fprintf(stderr, "skipping >4 GiB RF64 fixtures: no sparse file support\n");
+        remove(argv[1]);
+        return 77;
+    }
     const uint64_t large = (UINT64_C(1) << 32) + 32768;
     const uint64_t large_junk = (UINT64_C(1) << 32) + 2;
     if (ok) ok = check_fixture(argv[1], large, 0) && check_fixture(argv[1], 4, large_junk);

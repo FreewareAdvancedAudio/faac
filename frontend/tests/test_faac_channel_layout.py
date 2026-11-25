@@ -22,6 +22,8 @@ import subprocess
 import sys
 import tempfile
 
+import harness
+
 WARNING = 'the WAVE channel mask'
 PCM_GUID = bytes.fromhex('0100000000001000800000aa00389b71')
 

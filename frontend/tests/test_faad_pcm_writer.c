@@ -21,6 +21,7 @@
 #ifdef _WIN32
 #include <winioctl.h>
 #endif
+#include "sparse_probe.h"
 
 static int check_size(const char *path, uint64_t pcm_bytes, bool raw, bool gapless, bool expected_ok)
 {
@@ -157,6 +158,12 @@ static int check_channel_masks(const char *path)
 int main(int argc, char **argv)
 {
     if (argc != 2) return 1;
+#ifndef _WIN32
+    if (!sparse_files_supported(argv[1])) {
+        fprintf(stderr, "skipping large PCM writer checks: no sparse file support\n");
+        return 77;
+    }
+#endif
     uint64_t sizes[] = { (UINT64_C(1) << 31) - 4, (UINT64_C(1) << 31) + 4,
                          (UINT64_C(1) << 32) - 76, (UINT64_C(1) << 32) - 72,
                          (UINT64_C(1) << 32) - 40, (UINT64_C(1) << 32) + 32768,

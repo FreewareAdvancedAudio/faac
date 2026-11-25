@@ -563,8 +563,19 @@ jobs:
         run: meson test -C build --print-errorlogs
 
   big-endian:
-    name: Linux GCC (Big-endian)
+    name: Linux GCC (${{ matrix.name }})
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # s390x: 64-bit big-endian. m68k: big-endian with 2-byte int alignment,
+          # which test_abi_layout alone would catch. hppa: big-endian with a
+          # stack that grows up. Only s390x compares output with the native
+          # encoder; m68k's extended-precision FPU legitimately rounds differently.
+          - {name: 's390x (big-endian)', arch: s390x, gnu: s390x, family: s390x, qemu: qemu-s390x, endian: big, compare: true}
+          - {name: 'm68k (big-endian, 2-byte int)', arch: m68k, gnu: m68k, family: m68k, qemu: qemu-m68k, endian: big, compare: false}
+          - {name: 'hppa (big-endian)', arch: hppa, gnu: hppa, family: parisc, qemu: qemu-hppa, endian: big, compare: false}
 
     steps:
       - uses: actions/checkout@v7
@@ -572,9 +583,10 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson gcc-s390x-linux-gnu qemu-user
+          sudo apt-get install -y meson gcc-${{ matrix.gnu }}-linux-gnu libc6-dev-${{ matrix.gnu }}-cross qemu-user
 
       - name: Generate test input
+        if: matrix.compare
         run: |
           python3 - <<'PY'
           import math, struct, wave
@@ -594,43 +606,46 @@ jobs:
           PY
 
       - name: Build native reference
+        if: matrix.compare
         run: |
           meson setup build-native -Ddefault_library=static
           meson compile -C build-native
 
       - name: Test native reference
+        if: matrix.compare
         run: meson test -C build-native --print-errorlogs
 
-      - name: Build s390x (big-endian)
+      - name: Build ${{ matrix.arch }}
         run: |
-          cat > s390x.txt <<'EOF'
+          cat > cross.txt <<'EOF'
           [binaries]
-          c = 's390x-linux-gnu-gcc'
-          ar = 's390x-linux-gnu-ar'
-          strip = 's390x-linux-gnu-strip'
-          exe_wrapper = ['qemu-s390x']
+          c = '${{ matrix.gnu }}-linux-gnu-gcc'
+          ar = '${{ matrix.gnu }}-linux-gnu-ar'
+          strip = '${{ matrix.gnu }}-linux-gnu-strip'
+          exe_wrapper = ['${{ matrix.qemu }}']
 
           [host_machine]
           system = 'linux'
-          cpu_family = 's390x'
-          cpu = 's390x'
-          endian = 'big'
+          cpu_family = '${{ matrix.family }}'
+          cpu = '${{ matrix.family }}'
+          endian = '${{ matrix.endian }}'
 
           [properties]
           needs_exe_wrapper = true
           EOF
-          meson setup build-s390x --cross-file s390x.txt -Ddefault_library=static -Dc_link_args=-static
-          meson compile -C build-s390x
+          meson setup build-cross --cross-file cross.txt -Ddefault_library=static -Dc_link_args=-static
+          meson compile -C build-cross
 
-      - name: Test s390x (big-endian)
-        # The s390x binaries run under QEMU, so use a longer per-test limit.
-        run: meson test -C build-s390x --print-errorlogs --timeout-multiplier 4
+      - name: Test ${{ matrix.arch }}
+        # Emulated builds get a longer per-test limit from the build itself.
+        run: meson test -C build-cross --print-errorlogs
 
       - name: Encode natively and under qemu, compare
+        if: matrix.compare
         run: |
           for fmt in aac m4a; do
             build-native/frontend/faac -o native.$fmt input.wav
-            qemu-s390x build-s390x/frontend/faac -o s390x.$fmt input.wav
-            ls -l native.$fmt s390x.$fmt
-            cmp native.$fmt s390x.$fmt
+            ${{ matrix.qemu }} build-cross/frontend/faac -o cross.$fmt input.wav
+            ls -l native.$fmt cross.$fmt
+            cmp native.$fmt cross.$fmt
           done

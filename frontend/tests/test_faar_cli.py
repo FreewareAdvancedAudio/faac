@@ -21,6 +21,8 @@ import sys
 import tempfile
 import wave
 
+import harness
+
 
 def run(faar, *args):
     return subprocess.run([faar, *map(str, args)], stdout=subprocess.PIPE,
