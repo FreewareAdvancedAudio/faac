@@ -19,7 +19,8 @@
 
 #include "faar_engine.h"
 
-static const int16_t input_samples[] = {0, 1000, -1000, 32767};
+/* Raw little-endian s16 input, independent of the host byte order. */
+static const uint8_t input_samples[] = {0x00, 0x00, 0xe8, 0x03, 0x18, 0xfc, 0xff, 0x7f};
 
 static int check(int ok, const char *message) {
     if (!ok)

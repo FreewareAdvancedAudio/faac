@@ -8,7 +8,7 @@ MACHO = sys.platform == "darwin"
 
 # The compiler, not the sources, emits these into every object that needs
 # them, and each archive legitimately carries its own copy.
-GENERATED = (".refptr.", "x86.get_pc_thunk.", "odr_asan.")
+GENERATED = (".refptr.", "x86.get_pc_thunk.", "sparc_get_pc_thunk.", "odr_asan.")
 
 
 def globals_of(nm, archive):
