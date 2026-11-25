@@ -127,6 +127,14 @@ if test_timeout_multiplier > 1 and not meson.is_subproject()
         is_default: true)
 endif
 
+# Tests that take the longest on slow targets are started first (higher priority
+# runs earlier), so they do not all pile up at the end of a run and leave most
+# workers idle while two long tests finish. Only start order changes. Tiers, not
+# ranks: put a test in `long` if it takes about a minute under qemu-user on m68k,
+# `medium` for about half a minute.
+long_test_priority = 100
+medium_test_priority = 50
+
 subdir('docs')
 subdir('include')
 subdir('common')

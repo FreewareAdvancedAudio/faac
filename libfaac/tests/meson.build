@@ -58,7 +58,8 @@ if encoder_drc
     # (see tests/shard.h).
     foreach shard : range(5)
         test('test_unit_faac_drc_profile_curves_' + shard.to_string(), test_faac_drc,
-             args: ['profile_curves', shard.to_string(), '5'], timeout: 60)
+             args: ['profile_curves', shard.to_string(), '5'], timeout: 60,
+             priority: medium_test_priority)
     endforeach
 endif
 

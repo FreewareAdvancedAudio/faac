@@ -85,7 +85,8 @@ if get_option('encoder')
             continue
         endif
         test('test_integration_faad_robust_' + case_name, test_faad_robust,
-            args: [case_name], timeout: 120)
+            args: [case_name], timeout: 120,
+            priority: case_name in ['stereo-he-aac', 'six-channel-lc'] ? long_test_priority : 0)
     endforeach
 
     test_faad_roundtrip = executable('test_faad_roundtrip', 'test_faad_roundtrip.c',
@@ -106,7 +107,8 @@ if get_option('encoder')
             continue
         endif
         test('test_integration_faad_roundtrip_' + case_name, test_faad_roundtrip,
-            args: [case_name], timeout: 120)
+            args: [case_name], timeout: 120,
+            priority: case_name == 'he-aac-band' ? medium_test_priority : 0)
     endforeach
 
     test_faad_pce = executable('test_faad_pce', 'test_faad_pce.c',

@@ -26,7 +26,8 @@ foreach group : faar_quality_groups
   test('test_faar_quality_' + group, test_faar_quality, args: [group])
 endforeach
 foreach group : ['streaming-0', 'streaming-1']
-  test('test_faar_quality_' + group, test_faar_quality, args: [group])
+  test('test_faar_quality_' + group, test_faar_quality, args: [group],
+       priority: long_test_priority)
 endforeach
 
 test_faar_matrix = executable('test_faar_matrix', 'test_faar_matrix.c',
@@ -35,7 +36,8 @@ test_faar_matrix = executable('test_faar_matrix', 'test_faar_matrix.c',
   dependencies: [libfaar_dep, m_dep],
 )
 foreach group : ['matrix-0', 'matrix-1', 'matrix-2', 'equal-rate', 'channels', 'decimate', 'chunks']
-  test('test_faar_matrix_' + group, test_faar_matrix, args: [group])
+  test('test_faar_matrix_' + group, test_faar_matrix, args: [group],
+       priority: group in ['matrix-0', 'matrix-1', 'matrix-2'] ? medium_test_priority : 0)
 endforeach
 
 test_faar_dft_fir = executable('test_faar_dft_fir',
@@ -62,7 +64,8 @@ test_faar_bounded = executable('test_faar_bounded',
   include_directories: ['.', '..', inc],
   dependencies: [m_dep],
 )
-test('test_faar_bounded', test_faar_bounded, timeout: 120)
+test('test_faar_bounded', test_faar_bounded, timeout: 120,
+     priority: medium_test_priority)
 
 test_faar_design = executable('test_faar_design', 'test_faar_design.c',
   c_args: libfaar_args,
