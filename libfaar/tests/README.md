@@ -40,3 +40,11 @@ the caller's plan reference before processing streams.
 cascaded Good and generic Fast plans, verifies cleanup, then reuses the plan.
 On pthread platforms, `test_faar_design` also opens, processes and closes
 independent streams concurrently from one plan.
+
+Both programs are long on slow targets, so Meson registers each as eight tests
+(`test_faar_design_0` ... `_7`, `test_faar_design_alloc_0` ... `_7`) that run a
+slice of the checks. Run without arguments, a program still runs everything.
+With `<shard> <shards>` it runs the checks whose index is `shard` modulo
+`shards`; `tests/shard.h` explains the convention, which `test_sbr_pairing` and
+`test_faac_drc profile_curves` share. Adding a route or case needs no change in
+`meson.build`, and changing the shard count never leaves a check unrun.

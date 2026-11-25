@@ -51,10 +51,14 @@ if encoder_drc
     foreach c : ['off_baseline_hash', 'auto_encoder_integration',
                  'release_reaches_target', 'surround_weights_symmetric',
                  'surround_weights_71', 'gain_aligned_with_audio',
-                 'profile_curves', 'pce_before_fil', 'zero_reference',
-                 'invalid_profile']
-        test('test_unit_faac_drc_' + c, test_faac_drc, args: [c],
-             timeout: c == 'profile_curves' ? 60 : 30)
+                 'pce_before_fil', 'zero_reference', 'invalid_profile']
+        test('test_unit_faac_drc_' + c, test_faac_drc, args: [c])
+    endforeach
+    # profile_curves is the slowest case, 40 encodes, so it is split into shards
+    # (see tests/shard.h).
+    foreach shard : range(5)
+        test('test_unit_faac_drc_profile_curves_' + shard.to_string(), test_faac_drc,
+             args: ['profile_curves', shard.to_string(), '5'], timeout: 60)
     endforeach
 endif
 

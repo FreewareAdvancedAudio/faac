@@ -66,18 +66,27 @@ test('test_faar_bounded', test_faar_bounded, timeout: 120)
 
 test_faar_design = executable('test_faar_design', 'test_faar_design.c',
   c_args: libfaar_args,
-  include_directories: ['..', inc],
+  include_directories: ['..', '../..', inc],
   dependencies: [libfaar_dep, m_dep, dependency('threads', required: false)],
 )
-test('test_faar_design', test_faar_design, timeout: 180)
+# The sweep is split into shards (see tests/shard.h) so that a slow target times
+# out one slice alone; the program run without arguments still does everything.
+design_shards = 8
+foreach shard : range(design_shards)
+  test('test_faar_design_' + shard.to_string(), test_faar_design,
+       args: [shard.to_string(), design_shards.to_string()], timeout: 60)
+endforeach
 
 test_faar_design_alloc = executable('test_faar_design_alloc',
   ['test_faar_design.c', 'faar_alloc_hooks.c'] + libfaar_prepare_sources,
   c_args: libfaar_args + [faar_force_include, faar_alloc_include, '-DFAAR_PLAN_ALLOC_TEST'],
-  include_directories: ['.', '..', inc],
+  include_directories: ['.', '..', '../..', inc],
   dependencies: [m_dep],
 )
-test('test_faar_design_alloc', test_faar_design_alloc, timeout: 180)
+foreach shard : range(design_shards)
+  test('test_faar_design_alloc_' + shard.to_string(), test_faar_design_alloc,
+       args: [shard.to_string(), design_shards.to_string()], timeout: 60)
+endforeach
 
 test_faar_dft_prefilter = executable('test_faar_dft_prefilter',
   ['test_faar_dft_prefilter.c', '../dft_coeffs.c', '../dft_prefilter.c',

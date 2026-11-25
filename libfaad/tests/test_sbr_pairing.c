@@ -20,6 +20,7 @@
 #undef NDEBUG
 #include <assert.h>
 #include <stdlib.h>
+#include "tests/shard.h"
 
 static void put_bits(uint8_t *out, unsigned *pos, unsigned value, unsigned count)
 {
@@ -457,7 +458,9 @@ static void fill_elements(faad_decoder *dec, Elems e)
 /* Whatever layout follows any other, with no fills: an element in the same
  * place and size as one of the old layout continues its own last payload,
  * and every other element decodes like channels whose SBR never started. */
-static void test_sbr_apply_every_layout_change(uint32_t max_ch)
+/* `shard` runs only the "before" layouts it owns; NULL runs them all. Returns the
+ * number of "before" layouts, the items shards split between them. */
+static uint32_t test_sbr_apply_every_layout_change(uint32_t max_ch, test_shard *shard)
 {
     enum { MAX_TESTED = 6, MAX_LAYOUTS = 32 }; /* 32 splits of up to 6 channels */
     assert(max_ch <= MAX_TESTED);
@@ -466,6 +469,7 @@ static void test_sbr_apply_every_layout_change(uint32_t max_ch)
     uint32_t count = all_layouts(layouts, 0, (Elems){ { 0 }, 0 }, 0, max_ch);
     assert(count <= MAX_LAYOUTS);
     for (uint32_t b = 0; b < count; b++) {
+        if (shard && !test_shard_take(shard, b)) continue;
         for (uint32_t a = 0; a < count; a++) {
             Elems before = layouts[b], after = layouts[a];
             faad_decoder *changed = open_sbr(), *continuing = open_sbr(), *reference = open_sbr();
@@ -494,31 +498,41 @@ static void test_sbr_apply_every_layout_change(uint32_t max_ch)
                 for (uint32_t j = 0; j < before.n; j++)
                     same |= start_of(before, j) == start && before.id[j] == after.id[i];
                 const faad_decoder *expected = same ? continuing : reference;
-                for (uint32_t c = start; c < start + nch; c++)
+                for (uint32_t c = start; c < start + nch; c++) {
+                    if (memcmp(changed->pcm + c * SBR_OUT_LEN, expected->pcm + c * SBR_OUT_LEN,
+                               sizeof(float[SBR_OUT_LEN])) != 0)
+                        fprintf(stderr, "layout change %u -> %u (of %u layouts, up to %u "
+                                "channels): channel %u differs from the %s decoder\n",
+                                b, a, count, max_ch, c, same ? "continuing" : "reference");
                     assert(memcmp(changed->pcm + c * SBR_OUT_LEN, expected->pcm + c * SBR_OUT_LEN,
                                   sizeof(float[SBR_OUT_LEN])) == 0);
+                }
             }
             assert(faad_decoder_close(&changed) == FAAD_OK);
             assert(faad_decoder_close(&continuing) == FAAD_OK);
             assert(faad_decoder_close(&reference) == FAAD_OK);
         }
     }
+    return count;
 }
 
 /* No argument: the quick tests, with the layout sweep over up to three
- * channels. A channel count: only the sweep, over up to that many. */
+ * channels. A channel count: only the sweep, over up to that many, optionally
+ * followed by "<shard> <shards>" to run one slice of it (see tests/shard.h). */
 int main(int argc, char **argv)
 {
     build_fills();
     if (argc > 1) {
-        test_sbr_apply_every_layout_change((uint32_t)atoi(argv[1]));
-        return 0;
+        test_shard shard;
+        if (test_shard_init(&shard, argc, argv, 2)) return 2;
+        uint32_t layouts = test_sbr_apply_every_layout_change((uint32_t)atoi(argv[1]), &shard);
+        return test_shard_finish(&shard, layouts);
     }
     test_sbr_apply_layout_change_unpairs();
     test_sbr_apply_stale_partner_not_enhanced();
     test_sbr_apply_unfilled_element_not_enhanced();
     test_sbr_apply_returning_pair_not_enhanced();
-    test_sbr_apply_every_layout_change(3);
+    test_sbr_apply_every_layout_change(3, NULL);
     test_sbr_apply_skipped_fill_continues();
 #if MAX_CHANNELS >= 3
     test_sbr_apply_layout_change_beyond_first_pair();

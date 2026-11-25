@@ -151,7 +151,12 @@ if get_option('decoder-sbr') and get_option('max-channels') >= 2 and (default_li
         link_with: [libfaad_static], dependencies: [libm])
     test('test_unit_faad_sbr_pairing', test_sbr_pairing)
     # The layout sweep does not depend on byte order, so it skips the emulated cross builds.
+    # It is split into shards (see tests/shard.h) so a slow target times out one slice alone.
     if not meson.is_cross_build()
-        test('test_unit_faad_sbr_layouts', test_sbr_pairing, args: ['6'], timeout: 120)
+        sbr_layout_shards = 4
+        foreach shard : range(sbr_layout_shards)
+            test('test_unit_faad_sbr_layouts_' + shard.to_string(), test_sbr_pairing,
+                 args: ['6', shard.to_string(), sbr_layout_shards.to_string()], timeout: 60)
+        endforeach
     endif
 endif
