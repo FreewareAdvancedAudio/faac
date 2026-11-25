@@ -85,7 +85,8 @@ if get_option('encoder')
             continue
         endif
         test('test_integration_faad_robust_' + case_name, test_faad_robust,
-            args: [case_name], timeout: 120)
+            args: [case_name], timeout: 120,
+            priority: case_name in ['stereo-he-aac', 'six-channel-lc'] ? long_test_priority : 0)
     endforeach
 
     test_faad_roundtrip = executable('test_faad_roundtrip', 'test_faad_roundtrip.c',
@@ -106,7 +107,8 @@ if get_option('encoder')
             continue
         endif
         test('test_integration_faad_roundtrip_' + case_name, test_faad_roundtrip,
-            args: [case_name], timeout: 120)
+            args: [case_name], timeout: 120,
+            priority: case_name == 'he-aac-band' ? medium_test_priority : 0)
     endforeach
 
     test_faad_pce = executable('test_faad_pce', 'test_faad_pce.c',
@@ -151,7 +153,12 @@ if get_option('decoder-sbr') and get_option('max-channels') >= 2 and (default_li
         link_with: [libfaad_static], dependencies: [libm])
     test('test_unit_faad_sbr_pairing', test_sbr_pairing)
     # The layout sweep does not depend on byte order, so it skips the emulated cross builds.
+    # It is split into shards (see tests/shard.h) so a slow target times out one slice alone.
     if not meson.is_cross_build()
-        test('test_unit_faad_sbr_layouts', test_sbr_pairing, args: ['6'], timeout: 120)
+        sbr_layout_shards = 4
+        foreach shard : range(sbr_layout_shards)
+            test('test_unit_faad_sbr_layouts_' + shard.to_string(), test_sbr_pairing,
+                 args: ['6', shard.to_string(), sbr_layout_shards.to_string()], timeout: 60)
+        endforeach
     endif
 endif

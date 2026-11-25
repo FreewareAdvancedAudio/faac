@@ -41,6 +41,9 @@ meson test -C build --print-errorlogs
 meson install -C build
 ```
 
+How the tests are organised, and how to run them on other architectures, is in
+[tests/README.md](tests/README.md).
+
 ### Build options
 
 | Option | Default | Description |

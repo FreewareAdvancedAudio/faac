@@ -100,7 +100,8 @@ endif
 
 if get_option('encoder') and get_option('decoder') and meson.can_run_host_binaries()
     test('test_e2e_faad_large_input', find_program('python3'),
-        args: [files('test_faad_large_input.py'), faac, faad, get_option('max-channels').to_string()], timeout: 120)
+        args: [files('test_faad_large_input.py'), faac, faad, get_option('max-channels').to_string()], timeout: 120,
+        priority: medium_test_priority)
     test('test_e2e_faac_resample_cli', find_program('python3'),
         args: [files('test_faac_resample_cli.py'), faac, faad,
                (get_option('max-channels') >= 2 and encoder_sbr and
@@ -118,7 +119,8 @@ if get_option('encoder') and get_option('decoder') and meson.can_run_host_binari
     endif
     if get_option('max-channels') >= 8
         test('test_e2e_faad_pce_layout', find_program('python3'),
-            args: [files('test_faad_pce_layout.py'), faac, faad], timeout: 120)
+            args: [files('test_faad_pce_layout.py'), faac, faad], timeout: 120,
+            priority: medium_test_priority)
     endif
     if get_option('max-channels') >= 2 and encoder_ps and get_option('decoder-sbr') and get_option('decoder-ps')
         test('test_e2e_faac_ps_frontend', find_program('python3'),
@@ -132,13 +134,15 @@ if get_option('muxer') and get_option('encoder') and get_option('decoder') and m
     # (see test-timeout-multiplier) covers it.
     test('test_e2e_frontend_cli', find_program('python3'),
         args: [files('test_frontend_cli.py'), faac, faam, faad, get_option('max-channels').to_string(),
-               encoder_sbr.to_string(), encoder_ps.to_string()], timeout: 300)
+               encoder_sbr.to_string(), encoder_ps.to_string()], timeout: 300,
+            priority: long_test_priority)
     # Spawn-heavy too, so it relies on the scaled limit as well.
     test('test_e2e_faad_frontend', find_program('python3'),
         args: [files('test_faad_frontend.py'), faac, faad, faam,
                get_option('max-channels').to_string(), get_option('decoder-sbr').to_string(),
                get_option('decoder-drc').to_string(), encoder_sbr.to_string(),
-               get_option('decoder-dab').to_string()], timeout: 120)
+               get_option('decoder-dab').to_string()], timeout: 120,
+        priority: long_test_priority)
     subdir('faad')
 
     test('test_e2e_faam_metadata_cli', find_program('python3'),

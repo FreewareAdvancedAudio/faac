@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include <faac.h>
+#include "tests/shard.h"
 
 #ifndef M_PI_DOUBLE
 # define M_PI_DOUBLE 3.14159265358979323846
@@ -551,18 +552,31 @@ static float steady_gain(enum faac_drc_profile profile, float ref, float x)
     return last;
 }
 
-/* Each profile's static curve: boost, null band, 2:1 cut and the steeper tail. */
+/* Which slice of a sharded case to run; the whole case when no arguments are given. */
+static test_shard g_shard;
+/* The case that was sharded and how many items it has, for the exit status. */
+static unsigned long g_shard_items;
+
+/* Each profile's static curve: boost, null band, 2:1 cut and the steeper tail. Every
+ * (profile, gain point) is one shard item, an encode of its own; profiles differ a lot
+ * in cost, so sharding by profile alone would leave one shard far slower than the rest. */
 static void test_drc_profile_curves(void)
 {
     const float xs[] = { -45.0f, -30.0f, -10.0f, 0.0f, 5.0f, 8.0f, 15.0f, 24.0f };
+    const size_t points = sizeof(xs) / sizeof(xs[0]);
+    g_shard_items = (FAAC_DRC_SPEECH - FAAC_DRC_FILM + 1) * points;
     for (int p = FAAC_DRC_FILM; p <= FAAC_DRC_SPEECH; p++) {
-        for (size_t i = 0; i < sizeof(xs) / sizeof(xs[0]); i++) {
+        for (size_t i = 0; i < points; i++) {
+            if (!test_shard_take(&g_shard, (unsigned long)(p - FAAC_DRC_FILM) * points + i)) continue;
             float want = expected_gain((enum faac_drc_profile)p, xs[i]);
             /* the reference is placed so loud tones stay below full scale and
              * quiet ones stay inside the measurable headroom */
             float ref = xs[i] < -20.0f ? -5.0f : xs[i] > 10.0f ? -30.0f : -18.0f;
             float got = steady_gain((enum faac_drc_profile)p, ref, xs[i]);
             /* 1 LU of meter slack at 2:1 plus the 0.25 dB grid */
+            if (!(fabsf(got - want) <= 0.9f))
+                fprintf(stderr, "profile %d at %.1f dB (reference %.1f): got %.2f dB, want %.2f dB\n",
+                        p, xs[i], ref, got, want);
             assert(fabsf(got - want) <= 0.9f);
         }
     }
@@ -691,9 +705,12 @@ static const struct {
     { "invalid_profile", test_drc_invalid_profile },
 };
 
-/* One case per meson test so the slow ones run in parallel and time out alone. */
+/* One case per meson test so the slow ones run in parallel and time out alone. A
+ * case that is itself slow takes "<shard> <shards>" after its name (see
+ * tests/shard.h) and runs one slice of its items. */
 int main(int argc, char **argv)
 {
+    if (test_shard_init(&g_shard, argc, argv, 2)) return 2;
     int ran = 0;
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
         if (argc > 1 && strcmp(argv[1], cases[i].name) != 0)
@@ -704,6 +721,11 @@ int main(int argc, char **argv)
     if (!ran) {
         fprintf(stderr, "unknown case: %s\n", argv[1]);
         return 2;
+    }
+    /* Only a sharded case sets g_shard_items; without arguments the one shard owns all. */
+    if (g_shard.shards > 1) {
+        int status = test_shard_finish(&g_shard, g_shard_items);
+        if (status) return status;
     }
     printf("DRC tests passed.\n");
     return 0;

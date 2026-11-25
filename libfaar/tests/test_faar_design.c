@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "tests/shard.h"
 #ifdef FAAR_PLAN_ALLOC_TEST
 #include <faar_alloc_hooks.h>
 #elif !defined(_WIN32) || defined(__MINGW32__)
@@ -256,7 +257,10 @@ static int allocation_failures(const faar_config *cfg) {
   return faar_alloc_live() == live;
 }
 #endif
-int main(void) {
+int main(int argc, char **argv) {
+  test_shard shard;
+  if (test_shard_init(&shard, argc, argv, 1))
+    return 2;
   faar_library_info li = {0};
   li.struct_size = sizeof(li);
   if (faar_get_library_info(&li) != FAAR_OK)
@@ -283,6 +287,9 @@ int main(void) {
                                {32000, 32000}, {48000, 44100}, {48000, 32000},
                                {48000, 22050}, {48000, 50000}};
   const unsigned channel_cases[] = {1, 2, 3, 8};
+  /* Every (route, quality, channels, dither) combination is one item; the items
+   * after them (the concurrency run and each allocation sweep) continue the count. */
+  unsigned long item = 0;
   for (size_t route = 0; route < sizeof(rates) / sizeof(rates[0]); route++)
     for (int q = 0; q <= 2; q++)
       for (size_t ci = 0; ci < sizeof(channel_cases) / sizeof(channel_cases[0]);
@@ -291,18 +298,28 @@ int main(void) {
         if (ch > li.max_channels)
           continue;
         for (int d = 0; d <= 1; d++) {
+          if (!test_shard_take(&shard, item++))
+            continue;
           if (!config_for(
                   &c, rates[route][0], rates[route][1], ch, (faar_quality)q,
                   (d ? FAAR_DITHER_SHAPED : 0u)))
             return bad("config");
-          if (!compare(&c) || !multi_stream(&c))
-            return bad("route comparison or independent streams");
+          if (!compare(&c) || !multi_stream(&c)) {
+            char what[128];
+            snprintf(what, sizeof(what),
+                     "route comparison or independent streams: %u -> %u Hz, quality %d, "
+                     "%u channel(s), %s",
+                     (unsigned)rates[route][0], (unsigned)rates[route][1], q, ch,
+                     d ? "shaped dither" : "no dither");
+            return bad(what);
+          }
         }
       }
 #ifdef FAAR_DESIGN_THREADS
-  if (!config_for(&c, 96000, 32000, li.max_channels < 2 ? 1 : 2,
-                  FAAR_QUALITY_HIGH, FAAR_DITHER_SHAPED) ||
-      !concurrent(&c))
+  if (test_shard_take(&shard, item++) &&
+      (!config_for(&c, 96000, 32000, li.max_channels < 2 ? 1 : 2,
+                   FAAR_QUALITY_HIGH, FAAR_DITHER_SHAPED) ||
+       !concurrent(&c)))
     return bad("concurrent opens and streams");
 #endif
 #ifdef FAAR_PLAN_ALLOC_TEST
@@ -316,6 +333,8 @@ int main(void) {
       {48000, 50000, 2, FAAR_QUALITY_FAST},
   };
   for (size_t i = 0; i < sizeof(alloc_cases) / sizeof(alloc_cases[0]); i++) {
+    if (!test_shard_take(&shard, item++))
+      continue;
     if (!config_for(&c, alloc_cases[i].in, alloc_cases[i].out,
                     alloc_cases[i].ch > li.max_channels ? li.max_channels
                                                         : alloc_cases[i].ch,
@@ -325,5 +344,5 @@ int main(void) {
   }
 #endif
   puts("test_faar_design: ok");
-  return 0;
+  return test_shard_finish(&shard, item);
 }

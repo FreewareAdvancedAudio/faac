@@ -26,7 +26,8 @@ foreach group : faar_quality_groups
   test('test_faar_quality_' + group, test_faar_quality, args: [group])
 endforeach
 foreach group : ['streaming-0', 'streaming-1']
-  test('test_faar_quality_' + group, test_faar_quality, args: [group])
+  test('test_faar_quality_' + group, test_faar_quality, args: [group],
+       priority: long_test_priority)
 endforeach
 
 test_faar_matrix = executable('test_faar_matrix', 'test_faar_matrix.c',
@@ -35,7 +36,8 @@ test_faar_matrix = executable('test_faar_matrix', 'test_faar_matrix.c',
   dependencies: [libfaar_dep, m_dep],
 )
 foreach group : ['matrix-0', 'matrix-1', 'matrix-2', 'equal-rate', 'channels', 'decimate', 'chunks']
-  test('test_faar_matrix_' + group, test_faar_matrix, args: [group])
+  test('test_faar_matrix_' + group, test_faar_matrix, args: [group],
+       priority: group in ['matrix-0', 'matrix-1', 'matrix-2'] ? medium_test_priority : 0)
 endforeach
 
 test_faar_dft_fir = executable('test_faar_dft_fir',
@@ -62,22 +64,32 @@ test_faar_bounded = executable('test_faar_bounded',
   include_directories: ['.', '..', inc],
   dependencies: [m_dep],
 )
-test('test_faar_bounded', test_faar_bounded, timeout: 120)
+test('test_faar_bounded', test_faar_bounded, timeout: 120,
+     priority: medium_test_priority)
 
 test_faar_design = executable('test_faar_design', 'test_faar_design.c',
   c_args: libfaar_args,
-  include_directories: ['..', inc],
+  include_directories: ['..', '../..', inc],
   dependencies: [libfaar_dep, m_dep, dependency('threads', required: false)],
 )
-test('test_faar_design', test_faar_design, timeout: 180)
+# The sweep is split into shards (see tests/shard.h) so that a slow target times
+# out one slice alone; the program run without arguments still does everything.
+design_shards = 8
+foreach shard : range(design_shards)
+  test('test_faar_design_' + shard.to_string(), test_faar_design,
+       args: [shard.to_string(), design_shards.to_string()], timeout: 60)
+endforeach
 
 test_faar_design_alloc = executable('test_faar_design_alloc',
   ['test_faar_design.c', 'faar_alloc_hooks.c'] + libfaar_prepare_sources,
   c_args: libfaar_args + [faar_force_include, faar_alloc_include, '-DFAAR_PLAN_ALLOC_TEST'],
-  include_directories: ['.', '..', inc],
+  include_directories: ['.', '..', '../..', inc],
   dependencies: [m_dep],
 )
-test('test_faar_design_alloc', test_faar_design_alloc, timeout: 180)
+foreach shard : range(design_shards)
+  test('test_faar_design_alloc_' + shard.to_string(), test_faar_design_alloc,
+       args: [shard.to_string(), design_shards.to_string()], timeout: 60)
+endforeach
 
 test_faar_dft_prefilter = executable('test_faar_dft_prefilter',
   ['test_faar_dft_prefilter.c', '../dft_coeffs.c', '../dft_prefilter.c',
