@@ -11,6 +11,9 @@ Unreleased
 	  calling libm: on targets without the SSE2 quantizer (ARM, MIPS) the
 	  quantizer was several times slower, most of all on uClibc-ng. Output
 	  is unchanged
+	* The test suite runs under qemu-user on big-endian and other unusual
+	  targets, and test time limits scale on slow targets
+	  (-Dtest-timeout-multiplier)
 
 3.0 (Nov 18, 2026)
 

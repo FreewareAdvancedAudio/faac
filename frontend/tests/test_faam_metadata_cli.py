@@ -21,6 +21,8 @@ import subprocess
 import sys
 import tempfile
 
+import harness
+
 FAAM, FIXTURE = sys.argv[1:3]
 
 

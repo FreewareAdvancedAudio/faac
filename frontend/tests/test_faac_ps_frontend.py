@@ -24,6 +24,8 @@ import sys
 import tempfile
 import wave
 
+import harness
+
 
 def run(cmd):
     result = subprocess.run(cmd, capture_output=True)

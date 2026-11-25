@@ -14,11 +14,15 @@
 """Streaming boundaries and sparse compressed input beyond 4 GiB."""
 import json
 import os
+import platform
 import struct
 import subprocess
 import sys
 import tempfile
+import time
 import wave
+
+import harness
 
 faac, faad, max_channels = sys.argv[1:]
 channels = min(2, int(max_channels))
@@ -26,6 +30,46 @@ channels = min(2, int(max_channels))
 
 def run(args, **kw):
     return subprocess.run(args, check=True, capture_output=True, **kw).stdout
+
+
+_sparse_cache = {}
+
+
+def _hole_ok(probe, size):
+    start = time.monotonic()
+    try:
+        with open(probe, 'wb') as f:
+            f.seek(size)
+            f.write(b'\0')
+        st = os.stat(probe)
+        # A hole that takes over a second to create is not a hole, whatever
+        # st_blocks says.
+        return (st.st_size == size + 1 and getattr(st, 'st_blocks', 0) * 512 < (1 << 20)
+                and time.monotonic() - start < 1.0)
+    except (OSError, OverflowError, ValueError):
+        return False
+    finally:
+        try:
+            os.remove(probe)
+        except OSError:
+            pass
+
+
+def sparse_supported(directory):
+    """True if a file past 4 GiB can be created without allocating it.
+
+    GNU/Hurd and 32-bit builds of Python cannot seek that far, and some
+    filesystems write every byte; either way the check must skip, not fail or
+    time out. A small hole is tried first so the probe never writes gigabytes."""
+    if platform.system() == 'GNU':
+        # GNU/Hurd: the seek succeeds but writing the fixture times out, and
+        # st_blocks cannot be trusted to say why.
+        return False
+    if directory not in _sparse_cache:
+        probe = os.path.join(directory, 'sparse-probe')
+        _sparse_cache[directory] = (_hole_ok(probe, 64 << 20) and
+                                    _hole_ok(probe, (1 << 32) + 8192))
+    return _sparse_cache[directory]
 
 
 def boxes(buf, start=0, end=None):
@@ -65,7 +109,7 @@ with tempfile.TemporaryDirectory(prefix='faad-large-input-') as d:
     for option in ('-o', '-a'):
         p = subprocess.run([faad, '--overwrite', option, alias, m4a], capture_output=True)
         assert p.returncode != 0 and b'different files' in p.stderr
-    if os.name != 'nt':
+    if os.name != 'nt' and sparse_supported(d):
         big = (1 << 32) + 8191
         sparse = os.path.join(d, 'large.aac')
         with open(sparse, 'wb') as f:
@@ -113,4 +157,6 @@ with tempfile.TemporaryDirectory(prefix='faad-large-input-') as d:
             extracted = os.path.join(d, 'extracted.aac')
             run([faad, '--overwrite', '-a', extracted, sparse])
             assert open(extracted, 'rb').read() == compressed
+    if os.name != 'nt' and not sparse_supported(d):
+        print('skipped >4 GiB sparse-file checks: unsupported here')
 print('large streaming inputs: ok')

@@ -123,3 +123,13 @@ option('fuzzing-engine',
 
 option('encoder-drc', type: 'boolean', value: true,
     description: 'Enable dynamic range control metadata generation in libfaac')
+
+# Test time limits are tuned for a current x86-64/arm64 machine. Emulated,
+# FPU-less and 1990s-era targets (m68k, hppa, alpha, sh4, GNU/Hurd VMs, ...)
+# run the same suite 10-50x slower, so `meson test` scales every limit.
+option('test-timeout-multiplier',
+    description: 'Scale all test time limits (0 picks 1 for fast targets and 10 for slow or exotic ones)',
+    type: 'integer',
+    min: 0,
+    max: 1000,
+    value: 0)

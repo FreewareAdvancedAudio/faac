@@ -23,6 +23,8 @@ import wave
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../tests")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import harness
 from audio_fixtures import make_wav
 from drc_stream import drc, inject
 
@@ -43,6 +45,7 @@ def main():
         aac = os.path.join(directory, 'in.aac')
         subprocess.run([faac, '-a', '--object-type', 'lc', '-o', aac, src], check=True, capture_output=True)
         original = open(aac, 'rb').read()
+        byteorder = harness.byteorder_of(probe)
         def decode(data, cut=0, boost=0):
             path = os.path.join(directory, 'case.aac')
             with open(path, 'wb') as f:
@@ -52,7 +55,7 @@ def main():
             records = []
             pos = 0
             while pos < len(result.stdout):
-                r = struct.unpack_from('=7I', result.stdout, pos)
+                r = struct.unpack_from(byteorder + '7I', result.stdout, pos)
                 pos += 28
                 pcm = result.stdout[pos:pos + r[2]]
                 pos += r[2]
@@ -62,7 +65,7 @@ def main():
             return records
         def samples(records, channel=None):
             data = b''.join(p for _, p in records[3:])
-            v = struct.unpack('=' + 'f' * (len(data) // 4), data)
+            v = struct.unpack(byteorder + 'f' * (len(data) // 4), data)
             return v if channel is None else v[channel::channels]
         def ratio(actual, reference, expected, tolerance=.05):
             a, b = sum(x*x for x in actual), sum(x*x for x in reference)

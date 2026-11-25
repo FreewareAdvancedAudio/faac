@@ -23,6 +23,8 @@ import subprocess
 import sys
 import tempfile
 
+import harness
+
 RATE = 48000
 CHANNELS = 8
 # Distinct tone per input channel, in WAVE order L R C LFE BL BR SL SR.

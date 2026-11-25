@@ -32,7 +32,11 @@ test_output = executable('test_output', ['test_output.c', '../output.c'],
     include_directories: ['..', '../..', '../../include'])
 test('test_unit_frontend_output_helpers', test_output)
 
-if not meson.is_cross_build()
+# These are plain C programs that Meson starts through the exe_wrapper, so they
+# also run in cross builds (qemu-user) and cover big-endian and exotic ABIs. The
+# Python-driven tests spawn the frontends themselves; harness.py prefixes
+# the exe_wrapper, so they run in cross builds as well.
+if meson.can_run_host_binaries()
     test_faar_engine = executable('test_faar_engine',
         ['test_faar_engine.c', '../faar_engine.c'],
         c_args: c_args_list,
@@ -41,7 +45,7 @@ if not meson.is_cross_build()
     test('test_unit_frontend_faar_engine', test_faar_engine)
 endif
 
-if get_option('muxer') and not meson.is_cross_build()
+if get_option('muxer') and meson.can_run_host_binaries()
     test_faam_engine = executable('test_faam_engine',
         ['test_faam_engine.c', '../faam_engine.c', '../adts.c', '../annexb.c'],
         c_args: c_args_list,
@@ -50,7 +54,7 @@ if get_option('muxer') and not meson.is_cross_build()
     test('test_unit_frontend_faam_engine', test_faam_engine)
 endif
 
-if get_option('encoder') and not meson.is_cross_build()
+if get_option('encoder') and meson.can_run_host_binaries()
     test_encode_engine = executable('test_encode_engine', 'test_encode_engine.c',
         c_args: c_args_list,
         include_directories: ['..', '../..', '../../include', common_inc, '../../tests'],
@@ -61,7 +65,7 @@ if get_option('encoder') and not meson.is_cross_build()
                join_paths(meson.current_build_dir(), 'encode-engine-test.aac')])
 endif
 
-if get_option('decoder') and not meson.is_cross_build()
+if get_option('decoder') and meson.can_run_host_binaries()
     test_decode_engine = executable('test_decode_engine',
         ['test_decode_engine.c', '../decode_engine.c', '../mp4read.c', '../adts.c'],
         c_args: c_args_list,
@@ -71,7 +75,7 @@ if get_option('decoder') and not meson.is_cross_build()
     test('test_integration_faad_decode_engine', test_decode_engine)
 endif
 
-if get_option('encoder') and not meson.is_cross_build()
+if get_option('encoder') and meson.can_run_host_binaries()
     rf64_input_test = executable('test_rf64_input',
         ['test_rf64_input.c', '../input.c', '../cli_io.c', '../charset.c'],
         c_args: c_args_list,
@@ -83,7 +87,7 @@ if get_option('encoder') and not meson.is_cross_build()
         args: [files('test_faac_rf64_cli.py'), faac, get_option('max-channels').to_string()])
 endif
 
-if get_option('decoder') and not meson.is_cross_build()
+if get_option('decoder') and meson.can_run_host_binaries()
     pcm_writer_test = executable('test_faad_pcm_writer',
         ['test_faad_pcm_writer.c', '../mp4read.c', '../adts.c', '../encoder_quirks.c', '../cli_io.c', '../cli_parse.c', '../charset.c', '../help.c', git_version_h],
         include_directories: ['..', '../..', '../../include', common_inc],
@@ -94,7 +98,7 @@ if get_option('decoder') and not meson.is_cross_build()
         args: [files('test_faad_pcm_writer.py'), pcm_writer_test])
 endif
 
-if get_option('encoder') and get_option('decoder') and not meson.is_cross_build()
+if get_option('encoder') and get_option('decoder') and meson.can_run_host_binaries()
     test('test_e2e_faad_large_input', find_program('python3'),
         args: [files('test_faad_large_input.py'), faac, faad, get_option('max-channels').to_string()], timeout: 120)
     test('test_e2e_faac_resample_cli', find_program('python3'),
@@ -103,7 +107,7 @@ if get_option('encoder') and get_option('decoder') and not meson.is_cross_build(
                 get_option('decoder-sbr')).to_string()], timeout: 120)
 endif
 
-if get_option('encoder') and get_option('decoder') and not meson.is_cross_build()
+if get_option('encoder') and get_option('decoder') and meson.can_run_host_binaries()
     test('test_e2e_faac_channel_layout', find_program('python3'),
         args: [files('test_faac_channel_layout.py'), faac, faad,
                get_option('max-channels').to_string()])
@@ -123,22 +127,25 @@ if get_option('encoder') and get_option('decoder') and not meson.is_cross_build(
     endif
 endif
 
-if get_option('muxer') and get_option('encoder') and get_option('decoder') and not meson.is_cross_build()
+if get_option('muxer') and get_option('encoder') and get_option('decoder') and meson.can_run_host_binaries()
+    # Spawns hundreds of processes, which is slow on GNU/Hurd; the scaled limit
+    # (see test-timeout-multiplier) covers it.
     test('test_e2e_frontend_cli', find_program('python3'),
         args: [files('test_frontend_cli.py'), faac, faam, faad, get_option('max-channels').to_string(),
                encoder_sbr.to_string(), encoder_ps.to_string()], timeout: 300)
+    # Spawn-heavy too, so it relies on the scaled limit as well.
     test('test_e2e_faad_frontend', find_program('python3'),
         args: [files('test_faad_frontend.py'), faac, faad, faam,
                get_option('max-channels').to_string(), get_option('decoder-sbr').to_string(),
                get_option('decoder-drc').to_string(), encoder_sbr.to_string(),
-               get_option('decoder-dab').to_string()])
+               get_option('decoder-dab').to_string()], timeout: 120)
     subdir('faad')
 
     test('test_e2e_faam_metadata_cli', find_program('python3'),
         args: [files('test_faam_metadata_cli.py'), faam, test_faam_metadata])
 endif
 
-if get_option('resampler') and not meson.is_cross_build()
+if get_option('resampler') and meson.can_run_host_binaries()
     test('test_e2e_faar_cli', find_program('python3'),
         args: [files('test_faar_cli.py'), faar_cli, get_option('max-channels').to_string()], timeout: 60)
 endif

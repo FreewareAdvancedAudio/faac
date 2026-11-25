@@ -29,6 +29,8 @@ import threading
 import time
 import wave
 
+import harness
+
 sys.dont_write_bytecode = True
 test_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../tests"))
 sys.path.insert(0, test_root)
@@ -128,6 +130,7 @@ def main():
         proc = subprocess.Popen([faad, "-q", "-f", "raw", "-o", live_out, "-"],
                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.PIPE)
+        harness.shrink_pipe(proc.stdin)
         def feed():
             try:
                 proc.stdin.write(segment)
@@ -137,7 +140,7 @@ def main():
         feeder = threading.Thread(target=feed, daemon=True)
         feeder.start()
         try:
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + harness.scaled(5)
             while time.monotonic() < deadline:
                 if os.path.exists(live_out) and os.path.getsize(live_out) > 0:
                     break
@@ -147,8 +150,11 @@ def main():
         finally:
             proc.kill()
             proc.wait()
-            feeder.join(timeout=5)
-            proc.stdin.close()
+            feeder.join(timeout=harness.scaled(5))
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass  # flushing buffered input into the killed process: EPIPE
             proc.stderr.close()
 
         # Default names use only the basename's extension. A leading dot

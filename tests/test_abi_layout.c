@@ -61,10 +61,10 @@ BASELINE(faam_muxer_update_params, FAAM_MUXER_UPDATE_PARAMS_BASELINE);
 BASELINE(faam_muxer_info, FAAM_MUXER_INFO_BASELINE);
 BASELINE(faam_library_info, FAAM_LIBRARY_INFO_BASELINE);
 
-/* Pointer-free structs: released baselines and offsets are identical on every target. */
+/* Pointer-free structs: released baselines and offsets are identical on every target,
+ * except faac_encoder_info's tail on m68k (below). */
 #define BASELINE_IS(B, N) _Static_assert((B) == (N), #B " changed")
 BASELINE_IS(FAAC_PARAMS_BASELINE, 68);
-BASELINE_IS(FAAC_ENCODER_INFO_BASELINE, 64);
 BASELINE_IS(FAAD_CONFIG_BASELINE, 16);
 BASELINE_IS(FAAD_STREAM_INFO_BASELINE, 36);
 BASELINE_IS(FAAR_CONFIG_BASELINE, 32);
@@ -73,14 +73,22 @@ BASELINE_IS(FAAM_DEMUXER_CONFIG_BASELINE, 8);
 _Static_assert(offsetof(faac_params, sample_rate) == 4 && offsetof(faac_params, rate_control) == 56,
                "faac_params layout");
 _Static_assert(offsetof(faac_params, drc_profile) == 60, "faac_params DRC layout");
-_Static_assert(offsetof(faac_encoder_info, asc) == 40 && offsetof(faac_encoder_info, drc_profile) == 56,
+/* drc_profile follows asc[14] at the next int alignment: offset 56, or 54 on m68k
+ * where int is 2-byte aligned, so faac_encoder_info is the one struct whose tail
+ * differs there. */
+#define ASC_END (offsetof(faac_encoder_info, asc) + sizeof(((faac_encoder_info *)0)->asc))
+#define ALIGN_UP_INT32(n) (((n) + _Alignof(int32_t) - 1) / _Alignof(int32_t) * _Alignof(int32_t))
+_Static_assert(offsetof(faac_encoder_info, asc) == 40 &&
+               offsetof(faac_encoder_info, drc_profile) == ALIGN_UP_INT32(ASC_END),
                "faac_encoder_info appends after asc");
+BASELINE_IS(FAAC_ENCODER_INFO_BASELINE, ALIGN_UP_INT32(ASC_END) + 8);
 _Static_assert(offsetof(faad_config, downmix_mode) == 12, "faad_config layout");
 
-/* Pointer-free structs stay 4-byte aligned so a caller's smaller struct is never mis-aligned. */
-#define ALIGN4(T) _Static_assert(_Alignof(T) == 4, #T " alignment")
-ALIGN4(faac_params); ALIGN4(faac_encoder_info); ALIGN4(faad_config); ALIGN4(faad_stream_info);
-ALIGN4(faar_config); ALIGN4(faar_resampler_info); ALIGN4(faam_demuxer_config);
+/* Pointer-free structs align like a 32-bit integer (4 bytes, but only 2 on m68k), so
+ * a caller's smaller struct is never mis-aligned. */
+#define ALIGN_INT32(T) _Static_assert(_Alignof(T) == _Alignof(int32_t), #T " alignment")
+ALIGN_INT32(faac_params); ALIGN_INT32(faac_encoder_info); ALIGN_INT32(faad_config); ALIGN_INT32(faad_stream_info);
+ALIGN_INT32(faar_config); ALIGN_INT32(faar_resampler_info); ALIGN_INT32(faam_demuxer_config);
 
 int main(void)
 {

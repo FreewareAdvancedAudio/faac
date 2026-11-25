@@ -18,6 +18,8 @@ import subprocess
 import sys
 import tempfile
 
+import harness
+
 faac, max_channels = sys.argv[1:]
 fmt = struct.pack('<4sIHHIIHH', b'fmt ', 16, 1, 2, 48000, 192000, 4, 16)
 
