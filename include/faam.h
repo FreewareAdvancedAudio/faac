@@ -90,7 +90,7 @@ extern "C" {
 
 #define FAAM_VERSION_MAJOR 3
 #define FAAM_VERSION_MINOR 0
-#define FAAM_VERSION_PATCH 0
+#define FAAM_VERSION_PATCH 1
 #define FAAM_STR_(x) #x
 #define FAAM_STR(x) FAAM_STR_(x)
 #define FAAM_VERSION_STRING \

@@ -53,7 +53,7 @@ extern "C" {
 
 #define FAAD_VERSION_MAJOR 3
 #define FAAD_VERSION_MINOR 0
-#define FAAD_VERSION_PATCH 0
+#define FAAD_VERSION_PATCH 1
 #define FAAD_STR_(x) #x
 #define FAAD_STR(x) FAAD_STR_(x)
 #define FAAD_VERSION_STRING \

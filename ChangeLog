@@ -1,26 +1,36 @@
-Unreleased
+3.0.1 (Nov 26, 2026)
 
 	[ Nils Schimmelmann ]
 	* faac builds on uClibc-ng: the internal common/endian.h is now
 	  faac_endian.h, so it no longer shadows the C library's <endian.h>, and
-	  faar reads its clock with clock_gettime on POSIX
+	  faar reads its clock with clock_gettime on POSIX (thanks Godwin Gabriel
+	  Ndlovu)
 	* libfaac.a no longer carries the SSE2 quantizer as compiler bytecode, so
 	  a program linking the installed static library with another compiler
 	  no longer fails with an undefined quantize_sse2
 	* The encoder builds with -fno-math-errno, so sqrtf() inlines instead of
 	  calling libm: on targets without the SSE2 quantizer (ARM, MIPS) the
 	  quantizer was several times slower, most of all on uClibc-ng. Output
-	  is unchanged
+	  is unchanged (thanks andylee77)
 	* The test suite runs under qemu-user on big-endian and other unusual
 	  targets, and test time limits scale on slow targets
 	  (-Dtest-timeout-multiplier)
 	* The libfaam demuxer no longer overflows a signed integer on a fragment
-	  with a corrupt base data offset
+	  with a corrupt base data offset (found by OSS-Fuzz)
 	* A libfaam chapter update or removal now returns FAAM_ERR_UNSUPPORTED,
 	  leaving the file untouched, when tref/chap names track 0, its own track
 	  or one that is not a text track, or a track has no usable ID: the edit
-	  could overwrite another track. The demuxer ignores nested trak boxes and
-	  reads the first tkhd and media handler of each track
+	  could overwrite another track (found by OSS-Fuzz). The demuxer ignores
+	  nested trak boxes and reads the first tkhd and media handler of each
+	  track
+
+	[ Godwin Gabriel Ndlovu ]
+	* The WAV fuzz harness is built only where memfd_create exists, so
+	  -Dfrontend=true builds on toolchains without it
+
+	[ Akhil Mittra ]
+	* OSS-Fuzz support: the tests/fuzz harnesses now run continuously on
+	  Google's fuzzing infrastructure
 
 3.0 (Nov 18, 2026)
 

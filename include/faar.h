@@ -79,7 +79,7 @@ extern "C" {
 
 #define FAAR_VERSION_MAJOR 3
 #define FAAR_VERSION_MINOR 0
-#define FAAR_VERSION_PATCH 0
+#define FAAR_VERSION_PATCH 1
 #define FAAR_STR_(x) #x
 #define FAAR_STR(x) FAAR_STR_(x)
 #define FAAR_VERSION_STRING \
