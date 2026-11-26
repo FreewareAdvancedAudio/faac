@@ -1796,6 +1796,105 @@ static void chapter_id_exhausted(void) {
     free(f.buf);
 }
 
+static uint32_t track_count(memfile *f) {
+    faam_demuxer *d = open_mem(f, 0);
+    uint32_t n = 0;
+    CHECK(faam_demuxer_get_num_tracks(d, &n, NULL) == FAAM_OK);
+    faam_demuxer_close(&d);
+    return n;
+}
+
+/* Both an update and a removal must refuse, leaving every byte alone. */
+static void check_chapters_refused(memfile *f) {
+    memfile ref = *f;
+    ref.buf = (uint8_t *)malloc(f->len);
+    CHECK(ref.buf);
+    memcpy(ref.buf, f->buf, f->len);
+    faam_io io = mem_io(f);
+    faam_chapter one = { sizeof(faam_chapter), 0, "x" };
+    for (uint32_t n = 0; n < 2; n++) {
+        f->pos = 0;
+        CHECK(faam_update_chapters_stream(&io, n ? &one : NULL, n, 0) == FAAM_ERR_UNSUPPORTED);
+        CHECK(f->len == ref.len && !memcmp(f->buf, ref.buf, f->len));
+    }
+    free(ref.buf);
+    free(f->buf);
+}
+
+/* A trak the updater cannot name, or that is not a chapter track, is never overwritten. */
+static void chapter_target_refused(void) {
+    for (int which = 0; which < 5; which++) {
+        memfile f = {0};
+        split_lists(&f);
+        long chap = find_tag(&f, "chap", 0);
+        size_t tkhd = box_start(&f, "tkhd"); /* the chapter trak's */
+        CHECK(chap > 0);
+        switch (which) {
+        case 0: put32(f.buf + chap + 4, 0); break;
+        case 1: /* the owner names itself, and passes as a text track */
+            put32(f.buf + chap + 4, 1);
+            memcpy(f.buf + find_tag(&f, "soun", 0), "text", 4);
+            break;
+        case 2: { /* the handler type sits 16 bytes ahead of its name */
+            long name = find_tag(&f, "SubtitleHandler", 0);
+            CHECK(name > 16);
+            memcpy(f.buf + name - 16, "tmcd", 4);
+            break;
+        }
+        case 3: memcpy(f.buf + tkhd + 4, "free", 4); break;
+        case 4: { /* too short for the demuxer to read an id from */
+            uint32_t size = be32(f.buf + tkhd);
+            put32(f.buf + tkhd, 32);
+            put32(f.buf + tkhd + 32, size - 32);
+            memcpy(f.buf + tkhd + 36, "free", 4);
+            break;
+        }
+        }
+        check_chapters_refused(&f);
+    }
+}
+
+/* Boxes outside their proper parent, or repeated, must not change which trak the demuxer hides:
+ * the updater would then replace a counted track with a hidden one. */
+static void chapter_stray_boxes(void) {
+    static const uint8_t hdlr[32] = { 0, 0, 0, 32, 'h', 'd', 'l', 'r', 0, 0, 0, 0, 0, 0, 0, 0, 's', 'o', 'u', 'n' };
+    static const uint8_t trak[8] = { 0, 0, 0, 8, 't', 'r', 'a', 'k' };
+    static const uint8_t moov[16] = { 0, 0, 0, 16, 'm', 'o', 'o', 'v', 0, 0, 0, 8, 't', 'r', 'a', 'k' };
+    static const uint8_t udta[48] = { 0, 0, 0, 48, 'u', 'd', 't', 'a', 0, 0, 0, 40, 'm', 'd', 'i', 'a',
+                                      0, 0, 0, 32, 'h', 'd', 'l', 'r', 0, 0, 0, 0, 0, 0, 0, 0, 's', 'o', 'u', 'n' };
+    for (int which = 0; which < 5; which++) {
+        memfile f = {0};
+        split_lists(&f);
+        size_t tkhd = box_start(&f, "tkhd"), text = tkhd; /* the chapter trak's */
+        while (memcmp(f.buf + text + 4, "trak", 4)) text--;
+        size_t boxes[2] = { text, (size_t)find_tag(&f, "moov", 0) - 4 };
+        size_t end = text + be32(f.buf + text);
+        if (which == 0) {
+            uint8_t dup[128];
+            uint32_t size = be32(f.buf + tkhd);
+            CHECK(size <= sizeof(dup) && f.buf[tkhd + 8] == 0);
+            memcpy(dup, f.buf + tkhd, size);
+            put32(dup + 20, 9);
+            grow_boxes(&f, tkhd + size, dup, size, boxes, 2);
+        } else if (which == 1) {
+            grow_boxes(&f, end, hdlr, sizeof(hdlr), boxes, 2);
+        } else if (which == 2) {
+            grow_boxes(&f, end, trak, sizeof(trak), boxes, 2);
+        } else if (which == 3) {
+            grow_boxes(&f, end, moov, sizeof(moov), boxes, 2);
+        } else { /* ahead of the trak's own mdia */
+            grow_boxes(&f, tkhd + be32(f.buf + tkhd), udta, sizeof(udta), boxes, 2);
+        }
+        CHECK(track_count(&f) == 1);
+        faam_io io = mem_io(&f);
+        faam_chapter one = { sizeof(faam_chapter), 0, "x" };
+        f.pos = 0;
+        CHECK(faam_update_chapters_stream(&io, &one, 1, 0) == FAAM_OK);
+        CHECK(track_count(&f) == 1);
+        free(f.buf);
+    }
+}
+
 /* A crafted file must neither lose a track to a chapter edit nor slip past the table bounds. */
 static void test_chapter_hostile_input(void) {
     if (!TEST_HAVE_CHAPTERS) return;
@@ -1848,6 +1947,8 @@ static void test_chapter_hostile_input(void) {
     chapter_reader_fallbacks();
     chapter_multi_id_refused();
     chapter_id_exhausted();
+    chapter_target_refused();
+    chapter_stray_boxes();
 
     /* The chapter track takes the id after the last track, and next_track_ID must not wrap. */
     faam_muxer_config cfg;

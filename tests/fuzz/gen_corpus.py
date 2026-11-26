@@ -75,6 +75,12 @@ put('faam_demux', 'ossfuzz_590542602',
     b'\x00\x00\x00\x3cmoof\x00\x00\x00\x34traf'
     b'\x00\x00\x00\x18tfhd\x00\x00\x00\x01\x00\x00\x00\x01\x80' + bytes(7) +
     b'\x00\x00\x00\x14trun\x00\x00\x00\x01\x00\x00\x00\x01\xff\xff\xfc\x18')
+# OSS-Fuzz 590497771: an overlong moov whose only tkhd-less trak names chapter track 0.
+put('faam_tags', 'ossfuzz_590497771',
+    b'\xff \xff   \x00\x00\x02\x64moov\x00\x00\x00\x40mvhd' + b' ' * 12 + b'\x00' + b' ' * 7 +
+    b'\xff\xff\xff \xff \xff' + b' ' * 29 +
+    b'\x00\x00\x02\x1ctrak\x00\x00\x00\x1ctrak' + b' ' * 20 +
+    b'\x00\x00\x00\x20tref\x00\x00\x00\x0cchap')
 
 if faac:
     with tempfile.TemporaryDirectory() as tmp:

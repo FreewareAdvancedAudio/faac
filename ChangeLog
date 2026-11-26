@@ -16,6 +16,11 @@ Unreleased
 	  (-Dtest-timeout-multiplier)
 	* The libfaam demuxer no longer overflows a signed integer on a fragment
 	  with a corrupt base data offset
+	* A libfaam chapter update or removal now returns FAAM_ERR_UNSUPPORTED,
+	  leaving the file untouched, when tref/chap names track 0, its own track
+	  or one that is not a text track, or a track has no usable ID: the edit
+	  could overwrite another track. The demuxer ignores nested trak boxes and
+	  reads the first tkhd and media handler of each track
 
 3.0 (Nov 18, 2026)
 

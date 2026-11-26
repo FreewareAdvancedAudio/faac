@@ -317,7 +317,8 @@ static faam_status trak_id(const faam_io *io, const faam_atom_ref *trak, uint32_
     faam_status st = find_in(io, trak, "tkhd", &tkhd);
     uint8_t b[4];
     *id = 0;
-    if (st != FAAM_OK || tkhd.size < 24) return st;
+    /* The demuxer's minimum: below it, it numbers the trak by position instead. */
+    if (st != FAAM_OK || tkhd.size < 88) return st;
     uint8_t ver;
     if (!read_at(io, tkhd.offset + 8, &ver, 1) || !read_at(io, tkhd.offset + (ver == 1 ? 28 : 20), b, 4))
         return FAAM_ERR_IO_READ;
@@ -365,6 +366,7 @@ static faam_status locate(const faam_io *io, const faam_atom_ref *moov, chap_loc
             if (memcmp(type, "trak", 4)) continue;
             uint32_t id;
             if ((st = trak_id(io, &trak, &id)) != FAAM_OK) return st;
+            if (!id) return FAAM_ERR_UNSUPPORTED;
             if (pass == 1) {
                 if (loc->has_chap && id == loc->chap_id && !loc->ctrak.size) loc->ctrak = trak;
                 continue;
@@ -397,6 +399,26 @@ static faam_status locate(const faam_io *io, const faam_atom_ref *moov, chap_loc
         if (loc->owner.size && (st = find_in(io, &loc->owner, "tref", &loc->tref)) != FAAM_OK) return st;
     }
     return FAAM_OK;
+}
+
+/* Footprint: inlined at -O3, these push LTO into duplicating far larger code. At -Os, or with
+ * their single caller when fragments are compiled out, inlining is smaller. */
+#if FAAM_MUXER_FRAGMENTED && defined(__GNUC__) && !defined(__OPTIMIZE_SIZE__)
+#define ONE_COPY __attribute__((noinline))
+#else
+#define ONE_COPY
+#endif
+
+/* The chap target gets overwritten or erased, so it must be a text track of its own. */
+static ONE_COPY faam_status check_target(const faam_io *io, const chap_loc *loc)
+{
+    if (loc->has_chap && !loc->chap_id) return FAAM_ERR_UNSUPPORTED;
+    if (!loc->ctrak.size) return FAAM_OK;
+    if (loc->ctrak.offset == loc->owner.offset) return FAAM_ERR_UNSUPPORTED;
+    uint8_t kind[4];
+    faam_status st = trak_handler(io, &loc->ctrak, kind);
+    if (st == FAAM_OK && memcmp(kind, "text", 4) && memcmp(kind, "sbtl", 4)) return FAAM_ERR_UNSUPPORTED;
+    return st;
 }
 
 static faam_status scan_and_locate(const faam_io *io, faam_atom_ref *moov, faam_atom_ref *mdat,
@@ -551,15 +573,13 @@ static faam_status trex_for(const faam_io *io, uint32_t track_id, bool add)
 }
 #endif
 
-static faam_status reject_media_trak(const faam_io *io, const chap_loc *loc);
-
 static faam_status remove_chapters(const faam_io *io)
 {
     faam_atom_ref moov, mdat;
     uint64_t file_size;
     chap_loc loc;
     faam_status st = scan_and_locate(io, &moov, &mdat, &file_size, &loc);
-    if (st != FAAM_OK || (st = reject_media_trak(io, &loc)) != FAAM_OK) return st;
+    if (st != FAAM_OK) return st;
 
     faam_atom_ref udta, chpl = { 0, 0 };
     if ((st = find_in(io, &moov, "udta", &udta)) != FAAM_OK) return st;
@@ -657,16 +677,6 @@ static faam_status install_trak(const faam_io *io, const faam_atom_ref *moov, co
     return faam_atom_resize(io, at, 0, trak, len, ancestors, 1, moov, mdat, file_size);
 }
 
-/* A chap reference to an audio or video trak is not a chapter track to overwrite. */
-static faam_status reject_media_trak(const faam_io *io, const chap_loc *loc)
-{
-    uint8_t kind[4];
-    if (!loc->ctrak.size) return FAAM_OK;
-    faam_status st = trak_handler(io, &loc->ctrak, kind);
-    if (st == FAAM_OK && (!memcmp(kind, "soun", 4) || !memcmp(kind, "vide", 4))) return FAAM_ERR_UNSUPPORTED;
-    return st;
-}
-
 static faam_status write_trak(const faam_io *io, const faam_chapter *chapters, uint32_t count, uint32_t track_id)
 {
     faam_atom_ref moov, mdat;
@@ -674,7 +684,6 @@ static faam_status write_trak(const faam_io *io, const faam_chapter *chapters, u
     chap_loc loc;
     faam_status st = scan_and_locate(io, &moov, &mdat, &file_size, &loc);
     if (st != FAAM_OK) return st;
-    if ((st = reject_media_trak(io, &loc)) != FAAM_OK) return st;
 
     /* New samples go behind everything as their own mdat: no existing offset moves. */
     uint32_t slen = faam_chapter_samples_len(chapters, count);
@@ -729,7 +738,7 @@ static faam_status reserve_track_id(const faam_io *io, uint32_t track_id)
 
 /* Everything that can reject the file is checked before the first write, so a container the
  * edit cannot extend is left as it was. */
-static faam_status preflight(const faam_io *io, const faam_atom_ref *moov, const faam_atom_ref *mdat,
+static ONE_COPY faam_status preflight(const faam_io *io, const faam_atom_ref *moov, const faam_atom_ref *mdat,
                              uint64_t file_size, const chap_loc *loc)
 {
     faam_status st = faam_atom_offsets_check(io, moov, mdat, file_size);
@@ -778,7 +787,6 @@ static faam_status update_fragmented(const faam_io *io, const faam_chapter *chap
     if (!loc.owner.size || !loc.movie_ts) return FAAM_ERR_BAD_CONTAINER;
     if (!loc.has_chap && loc.max_id >= UINT32_MAX - 1) return FAAM_ERR_UNSUPPORTED;
     uint32_t track_id = loc.has_chap ? loc.chap_id : loc.max_id + 1;
-    if ((st = reject_media_trak(io, &loc)) != FAAM_OK) return st;
     if ((st = preflight(io, &moov, &mdat, file_size, &loc)) != FAAM_OK) return st;
     if ((st = reject_unparsed_tail(io, file_size)) != FAAM_OK) return st;
     if ((st = find_in(io, &moov, "mvex", &mvex)) != FAAM_OK) return st;
@@ -819,12 +827,14 @@ faam_status faam_update_chapters_stream(const faam_io *caller_io, const faam_cha
     faam_status st = faam_chapters_check(chapters, count);
     if (st != FAAM_OK) return st;
     if (!io->read || !io->write || !io->seek || !io->tell) return FAAM_ERR_UNSUPPORTED;
-    if (!count) return remove_chapters(io);
 
     faam_atom_ref moov, mdat;
     uint64_t file_size;
     chap_loc loc;
     if ((st = scan_and_locate(io, &moov, &mdat, &file_size, &loc)) != FAAM_OK) return st;
+    /* Ahead of every write, removal included. */
+    if ((st = check_target(io, &loc)) != FAAM_OK) return st;
+    if (!count) return remove_chapters(io);
 #if FAAM_MUXER_FRAGMENTED
     if (loc.fragmented) return update_fragmented(io, chapters, count);
 #else
