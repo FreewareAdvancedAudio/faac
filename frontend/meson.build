@@ -6,9 +6,8 @@ libiconv = cc.find_library('iconv', required: false)
 has_iconv = cc.has_header('iconv.h') and cc.has_function('iconv_open', dependencies: [libiconv])
 
 # Reruns every build, unlike config.h; only charset.c needs it, so
-# it's scoped here, not the root meson.build. No --tags: release tags here
-# are lightweight, so this always resolves to the bare short hash rather
-# than a tag name -- avoids reconciling it against meson.project_version().
+# it's scoped here, not the root meson.build. No --tags: only annotated
+# (release) tags name a build.
 git_version_h = vcs_tag(
     input: 'git_version.h.in',
     output: 'git_version.h',
