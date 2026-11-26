@@ -40,9 +40,15 @@ typedef struct {
     const uint8_t *ctts[FAAM_MAX_TRACKS];
     uint32_t  num_ctts[FAAM_MAX_TRACKS];
     bool co64[FAAM_MAX_TRACKS];
+    uint8_t seen[FAAM_MAX_TRACKS]; /* SEEN_* */
     int walk_trak;   /* box walk state handed to the next parse_boxes_recursive() level */
     int walk_depth;
+    uint32_t walk_parent;
 } faam_trak_tables;
+
+/* A trak's first tkhd and first mdia handler win, as in the chapter updater: reader and writer
+ * must agree on which trak is which. */
+enum { SEEN_TKHD = 1, SEEN_HDLR = 2 };
 
 /* A moov this large cannot be a camera or audiobook file; refuse it before allocating. */
 #define MOOV_MAX_BYTES (256U << 20)
@@ -211,7 +217,8 @@ static void parse_children(const uint8_t *buf, long offset, long end, struct faa
 static void parse_boxes_recursive(const uint8_t *buf, long offset, long end, struct faam_demuxer *d,
                                   faam_trak_tables *tb)
 {
-    int current_trak_idx = tb->walk_trak;
+    const int outer_trak_idx = tb->walk_trak;
+    const uint32_t parent = tb->walk_parent;
     int depth = tb->walk_depth;
     if (depth > MAX_BOX_DEPTH) return;
     long cur = offset;
@@ -236,7 +243,14 @@ static void parse_boxes_recursive(const uint8_t *buf, long offset, long end, str
         long payload_offset = cur + header_size;
         long payload_end = cur + (long)box_size;
 
+        int current_trak_idx = outer_trak_idx;
+        tb->walk_parent = read_u32_be(buf + cur + 4);
+
         if (memcmp(type, "trak", 4) == 0) {
+            if (depth != 1) { /* only moov's own children are tracks */
+                cur = payload_end;
+                continue;
+            }
             if (d->num_tracks < FAAM_MAX_TRACKS) {
                 current_trak_idx = (int)d->num_tracks;
                 if (!reserve_tracks(d, d->num_tracks + 1)) {
@@ -312,13 +326,17 @@ static void parse_boxes_recursive(const uint8_t *buf, long offset, long end, str
                 p += 9 + tlen;
                 d->num_chapters++;
             }
-        } else if (memcmp(type, "hdlr", 4) == 0 && current_trak_idx >= 0 && payload_offset + 12 <= payload_end) {
+        } else if (memcmp(type, "hdlr", 4) == 0 && current_trak_idx >= 0 && depth == 3 &&
+                   parent == FAAM_FOURCC('m', 'd', 'i', 'a') && !(tb->seen[current_trak_idx] & SEEN_HDLR) && payload_offset + 12 <= payload_end) {
+            tb->seen[current_trak_idx] |= SEEN_HDLR;
             if (memcmp(buf + payload_offset + 8, "soun", 4) == 0) {
                 d->tracks[current_trak_idx].info.track_type = FAAM_TRACK_AUDIO;
             } else if (memcmp(buf + payload_offset + 8, "vide", 4) == 0) {
                 d->tracks[current_trak_idx].info.track_type = FAAM_TRACK_VIDEO;
             }
-        } else if (memcmp(type, "tkhd", 4) == 0 && current_trak_idx >= 0 && payload_offset + 80 <= payload_end) {
+        } else if (memcmp(type, "tkhd", 4) == 0 && current_trak_idx >= 0 && parent == FAAM_FOURCC('t', 'r', 'a', 'k') &&
+                   !(tb->seen[current_trak_idx] & SEEN_TKHD) && payload_offset + 80 <= payload_end) {
+            tb->seen[current_trak_idx] |= SEEN_TKHD;
             uint8_t version = buf[payload_offset];
             long id_off = payload_offset + 4 + (version == 1 ? 16 : 8);
             if (id_off + 4 <= payload_end) {
@@ -529,7 +547,7 @@ static bool child_box(const uint8_t *buf, long *start, long *end, const char nam
 static uint32_t trak_id_of(const uint8_t *buf, long ts, long te)
 {
     long s = ts, e = te;
-    if (!child_box(buf, &s, &e, "tkhd") || s + 24 > e) return 0;
+    if (!child_box(buf, &s, &e, "tkhd") || s + 80 > e) return 0;
     return read_u32_be(buf + s + (buf[s] == 1 ? 20 : 12));
 }
 
@@ -860,7 +878,8 @@ static bool parse_traf(faam_demuxer *d, const uint8_t *b, uint32_t n, uint64_t m
             uint32_t first_flags = def_flags;
             if (flags & 1) {
                 if (pn < q + 4) return false;
-                cursor = (uint64_t)((int64_t)base + (int32_t)read_u32_be(p + q));
+                /* The offset is signed, the sum wraps: a corrupt base must not be signed overflow. */
+                cursor = base + (uint64_t)(int64_t)(int32_t)read_u32_be(p + q);
                 q += 4;
             }
             if (flags & 4) {

@@ -68,6 +68,20 @@ put('frontend_wav', 'seed_empty.wav',
     b'\x40\x1f\x00\x00\x80\x3e\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00')
 put('faar_resampler', 'seed_zeros', bytes(256))
 
+# OSS-Fuzz 590542602: a tfhd base of 2^63 with a negative trun data offset.
+put('faam_demux', 'ossfuzz_590542602',
+    b'\x00\x00\x00\x74moov\x00\x00\x00\x64trak\x00\x00\x00\x5ctkhd' + bytes(15) + b'\x01' +
+    bytes(68) + b'\x00\x00\x00\x08mvex'
+    b'\x00\x00\x00\x3cmoof\x00\x00\x00\x34traf'
+    b'\x00\x00\x00\x18tfhd\x00\x00\x00\x01\x00\x00\x00\x01\x80' + bytes(7) +
+    b'\x00\x00\x00\x14trun\x00\x00\x00\x01\x00\x00\x00\x01\xff\xff\xfc\x18')
+# OSS-Fuzz 590497771: an overlong moov whose only tkhd-less trak names chapter track 0.
+put('faam_tags', 'ossfuzz_590497771',
+    b'\xff \xff   \x00\x00\x02\x64moov\x00\x00\x00\x40mvhd' + b' ' * 12 + b'\x00' + b' ' * 7 +
+    b'\xff\xff\xff \xff \xff' + b' ' * 29 +
+    b'\x00\x00\x02\x1ctrak\x00\x00\x00\x1ctrak' + b' ' * 20 +
+    b'\x00\x00\x00\x20tref\x00\x00\x00\x0cchap')
+
 if faac:
     with tempfile.TemporaryDirectory() as tmp:
         m4a = encode(tmp, 's.m4a', 40000, '--title', 'seed')

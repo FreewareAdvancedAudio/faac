@@ -647,8 +647,9 @@ FAAMAPI const char *faam_strerror(faam_status status);
  * both; superseded text samples stay in the file as unreferenced mdat bytes.
  * FAAM_ERR_BAD_CONTAINER means the file has no moov, or a chunk table or fragment index that
  * growing the moov could not follow. A moov or edited box with a 64-bit size header, a
- * tref/chap that names an audio or video track or more than one chapter track, and a file
- * whose track ids leave none for a chapter track are FAAM_ERR_UNSUPPORTED. Both leave the
+ * tref/chap that names more than one track, track 0, its own track or one that is not a text
+ * track, a track without a usable id, and a file whose track ids leave none for a chapter
+ * track are FAAM_ERR_UNSUPPORTED. Both leave the
  * file as it was; an I/O failure partway through may leave unreferenced bytes at the end.
  * A fragmented recording, finalized or cut short by a crash, can be tagged too: its
  * completed fragments stay playable. Chapter updates return FAAM_ERR_NOT_BUILT without the

@@ -467,8 +467,9 @@ A chapter edit that cannot be applied leaves the file untouched:
 | Status | Cause |
 |---|---|
 | `FAAM_ERR_BAD_CONTAINER` | a chunk table or fragment index that cannot be followed |
-| `FAAM_ERR_UNSUPPORTED` | `tref/chap` names an audio or video track |
+| `FAAM_ERR_UNSUPPORTED` | `tref/chap` names track 0, its own track, or a track whose handler is not `text` or `sbtl` |
 | `FAAM_ERR_UNSUPPORTED` | `tref/chap` names more than one chapter track |
+| `FAAM_ERR_UNSUPPORTED` | a track has no usable `tkhd` track ID |
 | `FAAM_ERR_UNSUPPORTED` | no track id is left for a chapter track (the highest id must stay below `UINT32_MAX - 1`) |
 | `FAAM_ERR_UNSUPPORTED` | a fragmented recording that never finalized, which ends in an open fragment |
 | `FAAM_ERR_UNSUPPORTED` | a fragmented file in a build without `muxer-fragmented` |
