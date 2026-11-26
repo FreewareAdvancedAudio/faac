@@ -68,6 +68,14 @@ put('frontend_wav', 'seed_empty.wav',
     b'\x40\x1f\x00\x00\x80\x3e\x00\x00\x02\x00\x10\x00data\x00\x00\x00\x00')
 put('faar_resampler', 'seed_zeros', bytes(256))
 
+# OSS-Fuzz 590542602: a tfhd base of 2^63 with a negative trun data offset.
+put('faam_demux', 'ossfuzz_590542602',
+    b'\x00\x00\x00\x74moov\x00\x00\x00\x64trak\x00\x00\x00\x5ctkhd' + bytes(15) + b'\x01' +
+    bytes(68) + b'\x00\x00\x00\x08mvex'
+    b'\x00\x00\x00\x3cmoof\x00\x00\x00\x34traf'
+    b'\x00\x00\x00\x18tfhd\x00\x00\x00\x01\x00\x00\x00\x01\x80' + bytes(7) +
+    b'\x00\x00\x00\x14trun\x00\x00\x00\x01\x00\x00\x00\x01\xff\xff\xfc\x18')
+
 if faac:
     with tempfile.TemporaryDirectory() as tmp:
         m4a = encode(tmp, 's.m4a', 40000, '--title', 'seed')

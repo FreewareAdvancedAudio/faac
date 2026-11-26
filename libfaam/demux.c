@@ -860,7 +860,8 @@ static bool parse_traf(faam_demuxer *d, const uint8_t *b, uint32_t n, uint64_t m
             uint32_t first_flags = def_flags;
             if (flags & 1) {
                 if (pn < q + 4) return false;
-                cursor = (uint64_t)((int64_t)base + (int32_t)read_u32_be(p + q));
+                /* The offset is signed, the sum wraps: a corrupt base must not be signed overflow. */
+                cursor = base + (uint64_t)(int64_t)(int32_t)read_u32_be(p + q);
                 q += 4;
             }
             if (flags & 4) {

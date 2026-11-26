@@ -1620,6 +1620,35 @@ static void test_update_chunk_table_bounds(void) {
     }
 }
 
+#if FAAM_MUXER_FRAGMENTED
+/* A base data offset of 2^63 plus a negative trun offset is past any file, so the fragment ends
+ * the stream. UBSan is what catches a signed add here. */
+static void test_fragment_offset_wrap(void) {
+    uint8_t data[176] = {0};
+    static const struct { uint16_t at; uint8_t size; char name[5]; } box[] = {
+        { 0, 116, "moov" }, { 8, 100, "trak" }, { 16, 92, "tkhd" }, { 108, 8, "mvex" },
+        { 116, 60, "moof" }, { 124, 52, "traf" }, { 132, 24, "tfhd" }, { 156, 20, "trun" },
+    };
+    for (unsigned i = 0; i < sizeof(box) / sizeof(box[0]); i++) {
+        put32(data + box[i].at, box[i].size);
+        memcpy(data + box[i].at + 4, box[i].name, 4);
+    }
+    put32(data + 36, 1);           /* tkhd track id */
+    put32(data + 140, 1);          /* tfhd: explicit base */
+    put32(data + 144, 1);
+    put32(data + 148, 0x80000000u);
+    put32(data + 164, 1);          /* trun: data offset */
+    put32(data + 168, 1);
+    put32(data + 172, (uint32_t)-1000);
+
+    memfile f = { .buf = data, .len = sizeof(data), .cap = sizeof(data) };
+    faam_demuxer *d = open_mem(&f, 0);
+    faam_frame_loc loc = { .struct_size = sizeof(loc) };
+    CHECK(faam_demuxer_next_frame_loc(d, &loc) == FAAM_END_OF_STREAM);
+    faam_demuxer_close(&d);
+}
+#endif
+
 /* Start times and first title as the demuxer reports them. */
 static uint32_t read_chapters(memfile *f, faam_chapter *got, uint32_t cap) {
     faam_demuxer *d = open_mem(f, 0);
@@ -1859,6 +1888,9 @@ int main(void) {
     test_mdta_unsupported();
     test_oversized_child_box();
     test_chunk_offset_wrap();
+#if FAAM_MUXER_FRAGMENTED
+    test_fragment_offset_wrap();
+#endif
     test_overrunning_child_refused();
     test_fixed_size_samples_beyond_moov();
     test_claimed_samples_bounded();
