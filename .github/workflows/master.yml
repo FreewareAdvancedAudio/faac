@@ -3,7 +3,7 @@ name: Continuous Integration
 on:
   push:
     branches: [ "master" ]
-    tags-ignore: ['*']
+    tags: [ "faac-*" ]
     paths-ignore: ['**.md']
   pull_request:
     branches: [ "**" ]
@@ -183,17 +183,38 @@ jobs:
         with:
           arch: x64
 
+      # The tools report `git describe`, which needs history and tags.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # checkout can leave the pushed tag lightweight, which describe skips.
+      - name: Restore annotated tag
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: git fetch --force --tags origin
 
       - name: Build (MSYS2)
         if: matrix.config.shell == 'msys2 {0}'
         env:
           CC: ${{ matrix.config.compiler }}
+          VERSION_SUFFIX: ${{ github.ref_type == 'tag' && format('({0})', github.ref_name) || '(faac-' }}
         run: |
+          # Appended so MSYS2 tools win. The git that checked out the tree
+          # avoids a false -dirty from different line-ending settings.
+          export PATH="$PATH:/c/Program Files/Git/cmd"
           mkdir -p build temp
           cd build
           meson setup .. -Dprefix=$(realpath ../temp) ${{ matrix.config.options }}
           meson install
+
+          # A failed `git describe` silently drops the suffix, so check it.
+          banner=$(../temp/bin/faac.exe -h 2>&1 | tr -d '\r')
+          banner=${banner%%$'\n'*}
+          if [[ $banner != *"$VERSION_SUFFIX"* || $banner == *-dirty* ]]; then
+            echo "Unexpected version banner: $banner" >&2
+            exit 1
+          fi
 
           for exe in ../temp/bin/faac.exe ../temp/bin/faacgui.exe ../temp/bin/faad.exe ../temp/bin/faam.exe ../temp/bin/faar.exe; do
             test -f "$exe"
@@ -267,9 +288,16 @@ jobs:
 
       - name: Build (MSVC)
         if: matrix.config.compiler == 'cl'
+        env:
+          VERSION_SUFFIX: ${{ github.ref_type == 'tag' && format('({0})', github.ref_name) || '(faac-' }}
         run: |
           meson setup build -Dprefix="${{ github.workspace }}/temp" ${{ matrix.config.options }}
           meson install -C build
+
+          $banner = [string]@(temp/bin/faac.exe -h)[0]
+          if (-not $banner.Contains($env:VERSION_SUFFIX) -or $banner.Contains('-dirty')) {
+            throw "Unexpected version banner: $banner"
+          }
 
           foreach ($exe in @('faac.exe', 'faacgui.exe', 'faad.exe', 'faam.exe', 'faar.exe')) {
             $imports = dumpbin /DEPENDENTS "temp/bin/$exe"
